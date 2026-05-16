@@ -8,7 +8,6 @@ CREATE TABLE IF NOT EXISTS raw_withdraw_requests (
     block_number BIGINT NOT NULL,
     block_time TIMESTAMPTZ NOT NULL,
     user_address TEXT NOT NULL,
-    asset_address TEXT NOT NULL,
     asset_symbol TEXT NOT NULL,
     amount_raw NUMERIC(78, 0) NOT NULL,
     amount_normalized NUMERIC(38, 18) NOT NULL,
