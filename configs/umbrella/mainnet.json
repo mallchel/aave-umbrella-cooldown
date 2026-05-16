@@ -1,0 +1,18 @@
+{
+  "chainId": 1,
+  "umbrella": {
+    "proxyAddress": "0xa484ab92fe32b143aee7019fc1502b1daa522d31",
+    "implementationAddress": "0x75e8ac0c063b6966e2a9954adedf39bde9370197",
+    "events": {
+      "stakerCooldownUpdated": {
+        "signature": "StakerCooldownUpdated(address,uint256,uint256,uint256)",
+        "topic0": "0xddc8760931d97309f92a4266c6046f83387e6407bcd727e7dd2130bfc430c419"
+      }
+    }
+  },
+  "seedTransaction": {
+    "hash": "0xdbb0140fdb07a1a2c0f778e9674cb3748d70c61aa40e4b6b3eb9332803a2f661",
+    "methodSelector": "0x787a08a6",
+    "method": "cooldown()"
+  }
+}
