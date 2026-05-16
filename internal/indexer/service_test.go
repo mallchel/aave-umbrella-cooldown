@@ -65,7 +65,7 @@ type mockRepository struct {
 	getErr     error
 	saveCalls  []uint64
 	savedNames []string
-	upserted   []postgres.WithdrawRequest
+	flows      []postgres.WithdrawFlow
 	saveErr    error
 	upsertErr  error
 }
@@ -90,14 +90,13 @@ func (m *mockRepository) SaveIndexerState(ctx context.Context, name string, last
 	return nil
 }
 
-func (m *mockRepository) UpsertWithdrawRequest(ctx context.Context, req postgres.WithdrawRequest) error {
+func (m *mockRepository) UpsertWithdrawFlow(ctx context.Context, flow postgres.WithdrawFlow) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.upsertErr != nil {
 		return m.upsertErr
 	}
-	m.upserted = append(m.upserted, req)
-
+	m.flows = append(m.flows, flow)
 	return nil
 }
 
@@ -171,16 +170,16 @@ func TestRunCycle_ProcessesLogsAndAdvancesCheckpoint(t *testing.T) {
 	if rpc.lastQuery == nil {
 		t.Fatalf("expected FilterLogs to be called")
 	}
-	if rpc.lastQuery.FromBlock.Uint64() != startBlock+1 {
+	if rpc.lastQuery.FromBlock.Uint64() != startBlock {
 		t.Fatalf("unexpected from block: %d", rpc.lastQuery.FromBlock.Uint64())
 	}
-	if len(repo.upserted) != 1 {
-		t.Fatalf("expected one upserted request, got %d", len(repo.upserted))
+	if len(repo.flows) != 1 {
+		t.Fatalf("expected one upserted flow, got %d", len(repo.flows))
 	}
-	if got := repo.upserted[0].UserAddress; got != user.Hex() {
-		t.Fatalf("unexpected user address: %s", got)
+	if got := repo.flows[0].SenderAddress; got != user.Hex() {
+		t.Fatalf("unexpected sender address: %s", got)
 	}
-	if got := repo.upserted[0].AmountRaw; got != amount.String() {
+	if got := repo.flows[0].AmountRaw; got != amount.String() {
 		t.Fatalf("unexpected amount raw: %s", got)
 	}
 	if len(repo.saveCalls) == 0 {
@@ -248,13 +247,13 @@ func TestRunCycle_ProcessesLogsWithManyLogs(t *testing.T) {
 		t.Fatalf("unexpected to block: %d", rpc.lastQuery.ToBlock.Uint64())
 	}
 	// +2 last block with two mocked logs
-	if len(repo.upserted) != 500*2+2 {
-		t.Fatalf("expected %d upserted requests, got %d", 500*2+2, len(repo.upserted))
+	if len(repo.flows) != 500*2+2 {
+		t.Fatalf("expected %d upserted flows, got %d", 500*2+2, len(repo.flows))
 	}
-	if got := repo.upserted[0].UserAddress; got != user.Hex() {
-		t.Fatalf("unexpected user address: %s", got)
+	if got := repo.flows[0].SenderAddress; got != user.Hex() {
+		t.Fatalf("unexpected sender address: %s", got)
 	}
-	if got := repo.upserted[0].AmountRaw; got != amount.String() {
+	if got := repo.flows[0].AmountRaw; got != amount.String() {
 		t.Fatalf("unexpected amount raw: %s", got)
 	}
 	if len(repo.saveCalls) == 0 {
@@ -293,6 +292,7 @@ func newTestService(t *testing.T, rpc rpcClient, repo repository) *Service {
 			IndexerStateName: "umbrella-mainnet-indexer",
 			ProxyAddress:     common.HexToAddress("0xa484ab92fe32b143aee7019fc1502b1daa522d31"),
 			CooldownTopic0:   common.HexToHash("0xddc8760931d97309f92a4266c6046f83387e6407bcd727e7dd2130bfc430c419"),
+			WithdrawTopic0:   common.HexToHash("0xfbde797d201c681b91056529119e0b02407c7bb96a4a2c75c01fc9667232c8db"),
 		},
 		client:      rpc,
 		repo:        repo,

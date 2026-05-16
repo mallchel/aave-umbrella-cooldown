@@ -7,6 +7,10 @@
       "stakerCooldownUpdated": {
         "signature": "StakerCooldownUpdated(address,uint256,uint256,uint256)",
         "topic0": "0xddc8760931d97309f92a4266c6046f83387e6407bcd727e7dd2130bfc430c419"
+      },
+      "withdraw": {
+        "signature": "Withdraw(address,address,address,uint256,uint256)",
+        "topic0": "0xfbde797d201c681b91056529119e0b02407c7bb96a4a2c75c01fc9667232c8db"
       }
     }
   },

@@ -9,10 +9,12 @@ import (
 	"sync"
 	"time"
 
+	"1-task/internal/indexer/bindings"
 	"1-task/internal/storage/postgres"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -25,30 +27,25 @@ const stakeTokenABI = `[
 		{"indexed":false,"name":"endOfCooldown","type":"uint256"},
 		{"indexed":false,"name":"unstakeWindow","type":"uint256"}
 	]},
+	{"type":"event","name":"Withdraw","anonymous":false,"inputs":[
+		{"indexed":true,"name":"sender","type":"address"},
+		{"indexed":true,"name":"receiver","type":"address"},
+		{"indexed":true,"name":"owner","type":"address"},
+		{"indexed":false,"name":"assets","type":"uint256"},
+		{"indexed":false,"name":"shares","type":"uint256"}
+	]},
   {"type":"function","name":"asset","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"address"}]}
 ]`
-
-// const stakeTokenABI = `[
-// 	{"type":"event","name":"StakerCooldownUpdated","anonymous":false,"inputs":[
-// 		{"indexed":true,"name":"user","type":"address"},
-// 		{"indexed":false,"name":"amount","type":"uint256"},
-// 		{"indexed":false,"name":"endOfCooldown","type":"uint256"},
-// 		{"indexed":false,"name":"unstakeWindow","type":"uint256"}
-// 	]},
-//   {"type":"event","name":"Withdraw","anonymous":false,"inputs":[
-//     {"indexed":true,"name":"sender","type":"address"},
-//     {"indexed":true,"name":"receiver","type":"address"},
-//     {"indexed":true,"name":"owner","type":"address"},
-//     {"indexed":false,"name":"assets","type":"uint256"},
-//     {"indexed":false,"name":"shares","type":"uint256"}
-//   ]},
-//   {"type":"function","name":"asset","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"address"}]}
-// ]`
 
 type cooldownEvent struct {
 	Amount        *big.Int
 	EndOfCooldown *big.Int
 	UnstakeWindow *big.Int
+}
+
+type withdrawEvent struct {
+	Assets *big.Int
+	Shares *big.Int
 }
 
 type rpcClient interface {
@@ -61,15 +58,16 @@ type rpcClient interface {
 type repository interface {
 	GetIndexerState(ctx context.Context, name string) (postgres.IndexerState, error)
 	SaveIndexerState(ctx context.Context, name string, lastBlock uint64, processedAt time.Time) error
-	UpsertWithdrawRequest(ctx context.Context, req postgres.WithdrawRequest) error
+	UpsertWithdrawFlow(ctx context.Context, flow postgres.WithdrawFlow) error
 }
 
 // Service indexes umbrella events and reconciles queued rows.
 type Service struct {
-	cfg         Config
-	client      rpcClient
-	repo        repository
-	contractABI abi.ABI
+	cfg           Config
+	client        rpcClient
+	repo          repository
+	contractABI   abi.ABI
+	assetDecimals uint8
 }
 
 // Close closes underlying RPC connections.
@@ -92,11 +90,18 @@ func NewService(ctx context.Context, cfg Config, repo *postgres.Repository) (*Se
 		return nil, fmt.Errorf("parse stake token abi: %w", err)
 	}
 
+	assetDecimals, err := readAssetDecimals(ctx, client, cfg.ProxyAddress)
+	if err != nil {
+		client.Close()
+		return nil, fmt.Errorf("read asset decimals: %w", err)
+	}
+
 	return &Service{
-		cfg:         cfg,
-		client:      client,
-		repo:        repo,
-		contractABI: parsedABI,
+		cfg:           cfg,
+		client:        client,
+		repo:          repo,
+		contractABI:   parsedABI,
+		assetDecimals: assetDecimals,
 	}, nil
 }
 
@@ -133,8 +138,6 @@ func (s *Service) RunCycle(ctx context.Context) (bool, error) {
 	var wg sync.WaitGroup
 	// Concurrency throttle
 	batchSize := uint64(5)
-	// blockChan := make(chan uint64, 5)
-	// currentBlock := fromBlock
 	hasProcessedLogs := false
 
 	for batchStart := fromBlock; batchStart <= safeHead; batchStart += batchSize * s.cfg.BatchBlockRange {
@@ -164,6 +167,7 @@ func (s *Service) RunCycle(ctx context.Context) (bool, error) {
 					Addresses: []common.Address{s.cfg.ProxyAddress},
 					Topics: [][]common.Hash{{
 						s.cfg.CooldownTopic0,
+						s.cfg.WithdrawTopic0,
 					}},
 				})
 				if err != nil {
@@ -199,6 +203,11 @@ func (s *Service) RunCycle(ctx context.Context) (bool, error) {
 					case s.cfg.CooldownTopic0:
 						if err := s.handleCooldownLog(ctx, lg, bt); err != nil {
 							fmt.Printf("handle cooldown log: %v", err)
+							return
+						}
+					case s.cfg.WithdrawTopic0:
+						if err := s.handleWithdrawLog(ctx, lg, bt); err != nil {
+							fmt.Printf("handle withdraw log: %v", err)
 							return
 						}
 					}
@@ -239,28 +248,52 @@ func (s *Service) handleCooldownLog(ctx context.Context, lg types.Log, blockTime
 	}
 
 	user := common.HexToAddress(lg.Topics[1].Hex())
-	withdrawableFrom := time.Unix(ev.EndOfCooldown.Int64(), 0).UTC()
-	withdrawableUntil := withdrawableFrom.Add(time.Duration(ev.UnstakeWindow.Int64()) * time.Second)
 
-	req := postgres.WithdrawRequest{
-		ChainID:           s.cfg.ChainID,
-		TxHash:            lg.TxHash.Hex(),
-		LogIndex:          int32(lg.Index),
-		BlockNumber:       int64(lg.BlockNumber),
-		BlockTime:         blockTime,
-		UserAddress:       user.Hex(),
-		AssetSymbol:       "UNKNOWN",
-		AmountRaw:         ev.Amount.String(),
-		AmountNormalized:  "0",
-		AmountUSD:         "0",
-		CooldownStartTime: blockTime,
-		WithdrawableFrom:  withdrawableFrom,
-		WithdrawableUntil: withdrawableUntil,
-		Status:            "queued",
+	flow := postgres.WithdrawFlow{
+		ChainID:          s.cfg.ChainID,
+		TxHash:           lg.TxHash.Hex(),
+		LogIndex:         int32(lg.Index),
+		BlockNumber:      int64(lg.BlockNumber),
+		BlockTime:        blockTime,
+		SenderAddress:    user.Hex(),
+		EventType:        postgres.FlowEventTypeRequest,
+		AmountRaw:        ev.Amount.String(),
+		AmountNormalized: normalizeAmount(ev.Amount, s.assetDecimals),
 	}
 
-	if err := s.repo.UpsertWithdrawRequest(ctx, req); err != nil {
-		return fmt.Errorf("upsert cooldown request: %w", err)
+	if err := s.repo.UpsertWithdrawFlow(ctx, flow); err != nil {
+		return fmt.Errorf("upsert cooldown flow: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Service) handleWithdrawLog(ctx context.Context, lg types.Log, blockTime time.Time) error {
+	if len(lg.Topics) < 4 {
+		return fmt.Errorf("withdraw log missing topics")
+	}
+
+	var ev withdrawEvent
+	if err := s.contractABI.UnpackIntoInterface(&ev, "Withdraw", lg.Data); err != nil {
+		return fmt.Errorf("decode withdraw event: %w", err)
+	}
+
+	sender := common.HexToAddress(lg.Topics[1].Hex())
+
+	flow := postgres.WithdrawFlow{
+		ChainID:          s.cfg.ChainID,
+		TxHash:           lg.TxHash.Hex(),
+		LogIndex:         int32(lg.Index),
+		BlockNumber:      int64(lg.BlockNumber),
+		BlockTime:        blockTime,
+		SenderAddress:    sender.Hex(),
+		EventType:        postgres.FlowEventTypeWithdraw,
+		AmountRaw:        ev.Assets.String(),
+		AmountNormalized: normalizeAmount(ev.Assets, s.assetDecimals),
+	}
+
+	if err := s.repo.UpsertWithdrawFlow(ctx, flow); err != nil {
+		return fmt.Errorf("upsert withdraw flow: %w", err)
 	}
 
 	return nil
@@ -268,4 +301,47 @@ func (s *Service) handleCooldownLog(ctx context.Context, lg types.Log, blockTime
 
 func stringsReader(s string) *strings.Reader {
 	return strings.NewReader(s)
+}
+
+func readAssetDecimals(ctx context.Context, client *ethclient.Client, proxy common.Address) (uint8, error) {
+	proxyCaller, err := bindings.NewUmbrellaStakeTokenCaller(proxy, client)
+	if err != nil {
+		return 0, fmt.Errorf("create proxy caller: %w", err)
+	}
+
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	assetAddr, err := proxyCaller.Asset(callOpts)
+	if err != nil {
+		return 0, fmt.Errorf("call asset(): %w", err)
+	}
+
+	assetCaller, err := bindings.NewUmbrellaStakeTokenCaller(assetAddr, client)
+	if err != nil {
+		return 0, fmt.Errorf("create asset caller: %w", err)
+	}
+
+	decimals, err := assetCaller.Decimals(callOpts)
+	if err != nil {
+		return 0, fmt.Errorf("call decimals(): %w", err)
+	}
+
+	return decimals, nil
+}
+
+func normalizeAmount(amount *big.Int, decimals uint8) string {
+	if amount == nil {
+		return "0"
+	}
+	if decimals == 0 {
+		return amount.String()
+	}
+
+	denom := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil)
+	rat := new(big.Rat).SetInt(amount)
+	rat.Quo(rat, new(big.Rat).SetInt(denom))
+
+	precision := min(int(decimals), 18)
+
+	return rat.FloatString(precision)
 }

@@ -18,6 +18,7 @@ type Config struct {
 	ProxyAddress       common.Address
 	ImplementationAddr common.Address
 	CooldownTopic0     common.Hash
+	WithdrawTopic0     common.Hash
 }
 
 type fileConfig struct {
@@ -29,6 +30,9 @@ type fileConfig struct {
 			StakerCooldownUpdated struct {
 				Topic0 string `json:"topic0"`
 			} `json:"stakerCooldownUpdated"`
+			Withdraw struct {
+				Topic0 string `json:"topic0"`
+			} `json:"withdraw"`
 		} `json:"events"`
 	} `json:"umbrella"`
 }
@@ -54,6 +58,9 @@ func LoadConfig(configPath string, rpcURL string, batchRange uint64, finalityDep
 	if !common.IsHexHash(fc.Umbrella.Events.StakerCooldownUpdated.Topic0) {
 		return Config{}, fmt.Errorf("invalid cooldown topic0: %s", fc.Umbrella.Events.StakerCooldownUpdated.Topic0)
 	}
+	if !common.IsHexHash(fc.Umbrella.Events.Withdraw.Topic0) {
+		return Config{}, fmt.Errorf("invalid withdraw topic0: %s", fc.Umbrella.Events.Withdraw.Topic0)
+	}
 
 	if batchRange == 0 {
 		batchRange = 2_000
@@ -68,6 +75,7 @@ func LoadConfig(configPath string, rpcURL string, batchRange uint64, finalityDep
 		ProxyAddress:       common.HexToAddress(fc.Umbrella.ProxyAddress),
 		ImplementationAddr: common.HexToAddress(fc.Umbrella.ImplementationAddress),
 		CooldownTopic0:     common.HexToHash(fc.Umbrella.Events.StakerCooldownUpdated.Topic0),
+		WithdrawTopic0:     common.HexToHash(fc.Umbrella.Events.Withdraw.Topic0),
 	}
 
 	return cfg, nil
