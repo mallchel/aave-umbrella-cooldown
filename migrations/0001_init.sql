@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS raw_withdraw_flows (
     event_type TEXT NOT NULL,
     amount_raw NUMERIC(78, 0) NOT NULL,
     amount_normalized NUMERIC(38, 18) NOT NULL,
+    amount_usdt NUMERIC(38, 18) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT raw_withdraw_flows_event_unique UNIQUE (chain_id, tx_hash, log_index)

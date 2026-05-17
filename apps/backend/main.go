@@ -8,6 +8,8 @@ import (
 	"image/color"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"1-task/internal/envutil"
@@ -20,8 +22,10 @@ import (
 )
 
 type pageData struct {
-	RenderedAt time.Time
-	SVG        template.HTML
+	RenderedAt      time.Time
+	RequestedSVG    template.HTML
+	WithdrawnSVG    template.HTML
+	RequestCountSVG template.HTML
 }
 
 var pageTpl = template.Must(template.New("home").Parse(`<!doctype html>
@@ -82,8 +86,12 @@ var pageTpl = template.Must(template.New("home").Parse(`<!doctype html>
 	<main class="wrap">
 		<section class="card">
 			<h1>Aave Umbrella Queue</h1>
-			<p class="muted">Daily volumes from PostgreSQL. Queued vs withdrawable dates.</p>
-			<div class="chart">{{.SVG}}</div>
+			<p class="muted">Daily Requested volume to withdraw</p>
+			<div class="chart">{{.RequestedSVG}}</div>
+			<p class="muted">Daily Withdrawn volume</p>
+			<div class="chart">{{.WithdrawnSVG}}</div>
+			<p class="muted">Daily Request Count</p>
+			<div class="chart">{{.RequestCountSVG}}</div>
 			<p class="footer">Rendered at: {{.RenderedAt.Format "2006-01-02 15:04:05 MST"}}</p>
 		</section>
 	</main>
@@ -116,10 +124,6 @@ func main() {
 		renderHome(w, r, repo)
 	})
 
-	r.Get("/chart", func(w http.ResponseWriter, r *http.Request) {
-		renderHome(w, r, repo)
-	})
-
 	log.Printf("backend listening on %s", addr)
 	if err := http.ListenAndServe(addr, r); err != nil {
 		log.Fatal(err)
@@ -127,58 +131,60 @@ func main() {
 }
 
 func renderHome(w http.ResponseWriter, r *http.Request, repo *postgres.Repository) {
-	points, err := repo.ListDailyQueuePoints(r.Context())
+	points, err := repo.ListDailyFlowPoints(r.Context())
 	if err != nil {
 		http.Error(w, fmt.Sprintf("query chart data: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	svg, err := buildChartSVG(points)
+	requestedSvg, err := buildRequestedChartSVG(points)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("render chart: %v", err), http.StatusInternalServerError)
+		return
+	}
+	withdrawnSvg, err := buildWithdrawnChartSVG(points)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("render chart: %v", err), http.StatusInternalServerError)
+		return
+	}
+	requestCountSvg, err := buildRequestCountChartSVG(points)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("render chart: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := pageTpl.Execute(w, pageData{RenderedAt: time.Now(), SVG: template.HTML(svg)}); err != nil {
+	if err := pageTpl.Execute(w, pageData{RenderedAt: time.Now(), RequestedSVG: template.HTML(requestedSvg), WithdrawnSVG: template.HTML(withdrawnSvg), RequestCountSVG: template.HTML(requestCountSvg)}); err != nil {
 		http.Error(w, fmt.Sprintf("render page: %v", err), http.StatusInternalServerError)
 		return
 	}
 }
 
-func buildChartSVG(points []postgres.DailyQueuePoint) (string, error) {
+func buildRequestedChartSVG(points []postgres.DailyFlowPoint) (string, error) {
 	p := plot.New()
-	p.Title.Text = "Umbrella Queue Daily Volumes"
+	p.Title.Text = "Umbrella Requested Volumes"
 	p.X.Label.Text = "Day"
-	p.Y.Label.Text = "Amount (raw units)"
-	p.X.Tick.Marker = plot.TimeTicks{Format: "2006-01-02"}
+	p.Y.Label.Text = "Amount (USDT)"
+	p.X.Tick.Marker = dayTicks{}
+	p.Y.Tick.Marker = usdtTicks{}
 	p.Add(plotter.NewGrid())
 
-	queued := make(plotter.XYs, 0, len(points))
-	withdrawable := make(plotter.XYs, 0, len(points))
+	requested := make(plotter.XYs, 0, len(points))
+
 	for _, point := range points {
 		x := float64(point.Day.Unix())
-		queued = append(queued, plotter.XY{X: x, Y: point.QueuedVolume})
-		withdrawable = append(withdrawable, plotter.XY{X: x, Y: point.WithdrawableVolume})
+		requested = append(requested, plotter.XY{X: x, Y: point.Requested})
 	}
 
-	queuedLine, err := plotter.NewLine(queued)
+	requestedLine, err := plotter.NewLine(requested)
 	if err != nil {
-		return "", fmt.Errorf("build queued line: %w", err)
+		return "", fmt.Errorf("build requested line: %w", err)
 	}
-	queuedLine.Color = color.RGBA{R: 191, G: 77, B: 53, A: 255}
-	queuedLine.Width = vg.Points(2)
+	requestedLine.Color = color.RGBA{R: 191, G: 77, B: 53, A: 255}
+	requestedLine.Width = vg.Points(2)
 
-	withdrawableLine, err := plotter.NewLine(withdrawable)
-	if err != nil {
-		return "", fmt.Errorf("build withdrawable line: %w", err)
-	}
-	withdrawableLine.Color = color.RGBA{R: 18, G: 102, B: 82, A: 255}
-	withdrawableLine.Width = vg.Points(2)
-
-	p.Add(queuedLine, withdrawableLine)
-	p.Legend.Add("Queued", queuedLine)
-	p.Legend.Add("Withdrawable", withdrawableLine)
+	p.Add(requestedLine)
+	p.Legend.Add("Requested", requestedLine)
 	p.Legend.Top = true
 
 	writerTo, err := p.WriterTo(11*vg.Inch, 4.6*vg.Inch, "svg")
@@ -192,4 +198,153 @@ func buildChartSVG(points []postgres.DailyQueuePoint) (string, error) {
 	}
 
 	return buf.String(), nil
+}
+
+func buildWithdrawnChartSVG(points []postgres.DailyFlowPoint) (string, error) {
+	p := plot.New()
+	p.Title.Text = "Umbrella Withdrawn Volumes"
+	p.X.Label.Text = "Day"
+	p.Y.Label.Text = "Amount (USDT)"
+	p.X.Tick.Marker = dayTicks{}
+	p.Y.Tick.Marker = usdtTicks{}
+	p.Add(plotter.NewGrid())
+
+	withdrawn := make(plotter.XYs, 0, len(points))
+	for _, point := range points {
+		x := float64(point.Day.Unix())
+		withdrawn = append(withdrawn, plotter.XY{X: x, Y: point.Withdrawn})
+	}
+
+	withdrawnLine, err := plotter.NewLine(withdrawn)
+	if err != nil {
+		return "", fmt.Errorf("build withdrawn line: %w", err)
+	}
+	withdrawnLine.Color = color.RGBA{R: 18, G: 102, B: 82, A: 255}
+	withdrawnLine.Width = vg.Points(2)
+
+	p.Add(withdrawnLine)
+	p.Legend.Add("Withdrawn", withdrawnLine)
+	p.Legend.Top = true
+
+	writerTo, err := p.WriterTo(11*vg.Inch, 4.6*vg.Inch, "svg")
+	if err != nil {
+		return "", fmt.Errorf("create svg writer: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if _, err := writerTo.WriteTo(&buf); err != nil {
+		return "", fmt.Errorf("write svg: %w", err)
+	}
+
+	return buf.String(), nil
+}
+
+func buildRequestCountChartSVG(points []postgres.DailyFlowPoint) (string, error) {
+	p := plot.New()
+	p.Title.Text = "Umbrella Request Count"
+	p.X.Label.Text = "Day"
+	p.Y.Label.Text = "Count"
+	p.X.Tick.Marker = dayTicks{}
+	p.Y.Tick.Marker = usdtTicks{}
+	p.Add(plotter.NewGrid())
+
+	requestCount := make(plotter.XYs, 0, len(points))
+	for _, point := range points {
+		x := float64(point.Day.Unix())
+		requestCount = append(requestCount, plotter.XY{X: x, Y: point.RequestCount})
+	}
+
+	requestCountLine, err := plotter.NewLine(requestCount)
+	if err != nil {
+		return "", fmt.Errorf("build request count line: %w", err)
+	}
+	requestCountLine.Color = color.RGBA{R: 18, G: 102, B: 82, A: 255}
+	requestCountLine.Width = vg.Points(2)
+
+	p.Add(requestCountLine)
+	p.Legend.Add("Request Count", requestCountLine)
+	p.Legend.Top = true
+
+	writerTo, err := p.WriterTo(11*vg.Inch, 4.6*vg.Inch, "svg")
+	if err != nil {
+		return "", fmt.Errorf("create svg writer: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if _, err := writerTo.WriteTo(&buf); err != nil {
+		return "", fmt.Errorf("write svg: %w", err)
+	}
+
+	return buf.String(), nil
+}
+
+type dayTicks struct{}
+
+func (dayTicks) Ticks(min, max float64) []plot.Tick {
+	if max <= min {
+		return nil
+	}
+
+	const secondsPerDay = 24 * 60 * 60
+	spanDays := int((max - min) / secondsPerDay)
+
+	// Keep roughly up to 9 labels to avoid overcrowding.
+	stepDays := 1
+	candidates := []int{1, 2, 3, 7, 14, 30, 60, 90}
+	for _, c := range candidates {
+		if spanDays/c <= 15 {
+			stepDays = c
+			break
+		}
+		stepDays = c
+	}
+
+	start := time.Unix(int64(min), 0).UTC().Truncate(24 * time.Hour)
+	for start.Unix() < int64(min) {
+		start = start.Add(24 * time.Hour)
+	}
+
+	ticks := make([]plot.Tick, 0, spanDays/stepDays+2)
+	for t := start; float64(t.Unix()) <= max; t = t.Add(time.Duration(stepDays) * 24 * time.Hour) {
+		ticks = append(ticks, plot.Tick{
+			Value: float64(t.Unix()),
+			Label: t.Format("2006-01-02"),
+		})
+	}
+
+	return ticks
+}
+
+type usdtTicks struct{}
+
+func (usdtTicks) Ticks(min, max float64) []plot.Tick {
+	ticks := plot.DefaultTicks{}.Ticks(min, max)
+	for i := range ticks {
+		stringV := strconv.FormatFloat(ticks[i].Value, 'f', 6, 64)
+		ticks[i].Label = addThousandsSeparators(strings.TrimRight(strings.TrimRight(stringV, "0"), "."))
+	}
+	return ticks
+}
+
+func addThousandsSeparators(s string) string {
+	negative := strings.HasPrefix(s, "-")
+	if negative {
+		s = s[1:]
+	}
+
+	parts := strings.SplitN(s, ".", 2)
+	intPart := parts[0]
+
+	for i := len(intPart) - 3; i > 0; i -= 3 {
+		intPart = intPart[:i] + "," + intPart[i:]
+	}
+
+	if len(parts) == 2 && parts[1] != "" {
+		intPart += "." + parts[1]
+	}
+
+	if negative {
+		return "-" + intPart
+	}
+	return intPart
 }
