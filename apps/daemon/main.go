@@ -83,14 +83,18 @@ func runLoop() {
 }
 
 func runIndexCycle(svc *indexer.Service, isFirstRun bool) {
-	ctx := context.Background()
-	cancel := func() {}
-	if !isFirstRun {
+	var (
+		ctx    context.Context
+		cancel context.CancelFunc
+	)
+	if isFirstRun {
+		ctx, cancel = context.WithCancel(context.Background())
+	} else {
 		ctx, cancel = context.WithTimeout(context.Background(), 20*time.Second)
 	}
 	defer cancel()
 
-	processed, err := svc.RunCycle(ctx)
+	processed, err := svc.RunCycle(ctx, cancel)
 	if err != nil {
 		log.Printf("indexer cycle failed: %v", err)
 		return

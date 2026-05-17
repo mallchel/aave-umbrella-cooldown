@@ -67,14 +67,8 @@ type Service struct {
 	client        rpcClient
 	repo          repository
 	contractABI   abi.ABI
-	assetAddress  common.Address
 	assetDecimals uint8
-	assetPrice    *big.Int
 }
-
-const assetPriceDecimals = uint8(8)
-
-var usdtMainnetAddress = common.HexToAddress("0xdAC17F958D2ee523a2206206994597C13D831ec7")
 
 // Close closes underlying RPC connections.
 func (s *Service) Close() {
@@ -96,16 +90,10 @@ func NewService(ctx context.Context, cfg Config, repo *postgres.Repository) (*Se
 		return nil, fmt.Errorf("parse stake token abi: %w", err)
 	}
 
-	assetAddress, assetDecimals, err := readAssetMeta(ctx, client, cfg.ProxyAddress)
+	assetDecimals, err := readAssetDecimals(ctx, client, cfg.ProxyAddress)
 	if err != nil {
 		client.Close()
 		return nil, fmt.Errorf("read asset metadata: %w", err)
-	}
-
-	assetPrice, err := readAssetPrice(ctx, client, cfg.ProxyAddress)
-	if err != nil {
-		client.Close()
-		return nil, fmt.Errorf("read asset price: %w", err)
 	}
 
 	return &Service{
@@ -113,9 +101,7 @@ func NewService(ctx context.Context, cfg Config, repo *postgres.Repository) (*Se
 		client:        client,
 		repo:          repo,
 		contractABI:   parsedABI,
-		assetAddress:  assetAddress,
 		assetDecimals: assetDecimals,
-		assetPrice:    assetPrice,
 	}, nil
 }
 
@@ -123,7 +109,7 @@ func NewService(ctx context.Context, cfg Config, repo *postgres.Repository) (*Se
 var startBlock = uint64(16832680)
 
 // RunCycle processes one block range and returns true when something was indexed.
-func (s *Service) RunCycle(ctx context.Context) (bool, error) {
+func (s *Service) RunCycle(ctx context.Context, cancel context.CancelFunc) (bool, error) {
 	checkpoint, err := s.repo.GetIndexerState(ctx, s.cfg.IndexerStateName)
 
 	if err == sql.ErrNoRows {
@@ -144,7 +130,7 @@ func (s *Service) RunCycle(ctx context.Context) (bool, error) {
 
 	safeHead := latest
 	if s.cfg.FinalityDepth > 0 {
-		safeHead = latest - s.cfg.FinalityDepth
+		safeHead = max(0, latest-s.cfg.FinalityDepth)
 	}
 
 	fromBlock := min(checkpoint.LastProcessedBlock, safeHead)
@@ -186,6 +172,7 @@ func (s *Service) RunCycle(ctx context.Context) (bool, error) {
 				})
 				if err != nil {
 					fmt.Printf("filter logs: %v", err)
+					cancel()
 					return
 				}
 				mu.Lock()
@@ -207,6 +194,7 @@ func (s *Service) RunCycle(ctx context.Context) (bool, error) {
 						h, err := s.client.HeaderByNumber(ctx, new(big.Int).SetUint64(lg.BlockNumber))
 						if err != nil {
 							fmt.Printf("load block header %d: %v", lg.BlockNumber, err)
+							cancel()
 							return
 						}
 						bt = time.Unix(int64(h.Time), 0).UTC()
@@ -217,11 +205,13 @@ func (s *Service) RunCycle(ctx context.Context) (bool, error) {
 					case s.cfg.CooldownTopic0:
 						if err := s.handleCooldownLog(ctx, lg, bt); err != nil {
 							fmt.Printf("handle cooldown log: %v", err)
+							cancel()
 							return
 						}
 					case s.cfg.WithdrawTopic0:
 						if err := s.handleWithdrawLog(ctx, lg, bt); err != nil {
 							fmt.Printf("handle withdraw log: %v", err)
+							cancel()
 							return
 						}
 					}
@@ -273,7 +263,6 @@ func (s *Service) handleCooldownLog(ctx context.Context, lg types.Log, blockTime
 		EventType:        postgres.FlowEventTypeRequest,
 		AmountRaw:        ev.Amount.String(),
 		AmountNormalized: normalizeAmount(ev.Amount, s.assetDecimals),
-		AmountUSDT:       s.normalizeUSDTAmount(ev.Amount),
 	}
 
 	if err := s.repo.UpsertWithdrawFlow(ctx, flow); err != nil {
@@ -305,7 +294,6 @@ func (s *Service) handleWithdrawLog(ctx context.Context, lg types.Log, blockTime
 		EventType:        postgres.FlowEventTypeWithdraw,
 		AmountRaw:        ev.Assets.String(),
 		AmountNormalized: normalizeAmount(ev.Assets, s.assetDecimals),
-		AmountUSDT:       s.normalizeUSDTAmount(ev.Assets),
 	}
 
 	if err := s.repo.UpsertWithdrawFlow(ctx, flow); err != nil {
@@ -319,71 +307,30 @@ func stringsReader(s string) *strings.Reader {
 	return strings.NewReader(s)
 }
 
-func readAssetMeta(ctx context.Context, client *ethclient.Client, proxy common.Address) (common.Address, uint8, error) {
+func readAssetDecimals(ctx context.Context, client *ethclient.Client, proxy common.Address) (uint8, error) {
 	proxyCaller, err := bindings.NewUmbrellaStakeTokenCaller(proxy, client)
 	if err != nil {
-		return common.Address{}, 0, fmt.Errorf("create proxy caller: %w", err)
+		return 0, fmt.Errorf("create proxy caller: %w", err)
 	}
 
 	callOpts := &bind.CallOpts{Context: ctx}
 
 	assetAddr, err := proxyCaller.Asset(callOpts)
 	if err != nil {
-		return common.Address{}, 0, fmt.Errorf("call asset(): %w", err)
+		return 0, fmt.Errorf("call asset(): %w", err)
 	}
 
 	assetCaller, err := bindings.NewUmbrellaStakeTokenCaller(assetAddr, client)
 	if err != nil {
-		return common.Address{}, 0, fmt.Errorf("create asset caller: %w", err)
+		return 0, fmt.Errorf("create asset caller: %w", err)
 	}
 
 	decimals, err := assetCaller.Decimals(callOpts)
 	if err != nil {
-		return common.Address{}, 0, fmt.Errorf("call decimals(): %w", err)
+		return 0, fmt.Errorf("call decimals(): %w", err)
 	}
 
-	return assetAddr, decimals, nil
-}
-
-func readAssetPrice(ctx context.Context, client *ethclient.Client, proxy common.Address) (*big.Int, error) {
-	proxyCaller, err := bindings.NewUmbrellaStakeTokenCaller(proxy, client)
-	if err != nil {
-		return nil, fmt.Errorf("create proxy caller: %w", err)
-	}
-
-	callOpts := &bind.CallOpts{Context: ctx}
-	price, err := proxyCaller.LatestAnswer(callOpts)
-	if err != nil {
-		return nil, fmt.Errorf("call latestAnswer(): %w", err)
-	}
-	if price == nil || price.Sign() <= 0 {
-		return nil, fmt.Errorf("latestAnswer() returned non-positive price")
-	}
-
-	return price, nil
-}
-
-func (s *Service) normalizeUSDTAmount(amount *big.Int) string {
-	if amount == nil {
-		return "0"
-	}
-
-	if s.assetAddress == usdtMainnetAddress {
-		return normalizeAmount(amount, s.assetDecimals)
-	}
-
-	if s.assetPrice == nil || s.assetPrice.Sign() <= 0 {
-		return "0"
-	}
-
-	rat := new(big.Rat).SetInt(amount)
-	rat.Mul(rat, new(big.Rat).SetInt(s.assetPrice))
-
-	scale := int64(s.assetDecimals) + int64(assetPriceDecimals)
-	denom := new(big.Int).Exp(big.NewInt(10), big.NewInt(scale), nil)
-	rat.Quo(rat, new(big.Rat).SetInt(denom))
-
-	return rat.FloatString(18)
+	return decimals, nil
 }
 
 func normalizeAmount(amount *big.Int, decimals uint8) string {

@@ -105,7 +105,9 @@ func TestRunCycle_FirstRunInitializesCheckpointAndProcessesStartBlockRange(t *te
 	rpc := &mockRPCClient{latestBlock: startBlock}
 	svc := newTestService(t, rpc, repo)
 
-	processed, err := svc.RunCycle(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	processed, err := svc.RunCycle(ctx, cancel)
 
 	if err != nil {
 		t.Fatalf("RunCycle returned error: %v", err)
@@ -160,7 +162,9 @@ func TestRunCycle_ProcessesLogsAndAdvancesCheckpoint(t *testing.T) {
 	rpc.headers = map[uint64]*types.Header{logBlock: {Time: uint64(1700000100)}}
 
 	svc := newTestService(t, rpc, repo)
-	processed, err := svc.RunCycle(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	processed, err := svc.RunCycle(ctx, cancel)
 	if err != nil {
 		t.Fatalf("RunCycle returned error: %v", err)
 	}
@@ -232,7 +236,9 @@ func TestRunCycle_ProcessesLogsWithManyLogs(t *testing.T) {
 	}
 
 	svc := newTestService(t, rpc, repo)
-	processed, err := svc.RunCycle(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	processed, err := svc.RunCycle(ctx, cancel)
 
 	if err != nil {
 		t.Fatalf("RunCycle returned error: %v", err)
@@ -269,7 +275,9 @@ func TestRunCycle_ReturnsErrorWhenGetCheckpointFails(t *testing.T) {
 	rpc := &mockRPCClient{latestBlock: startBlock + 10}
 	svc := newTestService(t, rpc, repo)
 
-	processed, err := svc.RunCycle(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	processed, err := svc.RunCycle(ctx, cancel)
 	if err == nil {
 		t.Fatalf("expected error")
 	}

@@ -19,7 +19,6 @@ func (r *Repository) UpsertWithdrawFlow(ctx context.Context, flow WithdrawFlow) 
 				"event_type",
 				"amount_raw",
 				"amount_normalized",
-				"amount_usdt",
 				"updated_at",
 			}),
 		}).

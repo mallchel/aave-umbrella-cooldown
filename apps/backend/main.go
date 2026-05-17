@@ -86,11 +86,11 @@ var pageTpl = template.Must(template.New("home").Parse(`<!doctype html>
 	<main class="wrap">
 		<section class="card">
 			<h1>Aave Umbrella Queue</h1>
-			<p class="muted">Daily Requested volume to withdraw</p>
+			<p class="muted">Daily requested volume to withdraw</p>
 			<div class="chart">{{.RequestedSVG}}</div>
-			<p class="muted">Daily Withdrawn volume</p>
+			<p class="muted">Daily withdrawn volume</p>
 			<div class="chart">{{.WithdrawnSVG}}</div>
-			<p class="muted">Daily Request Count</p>
+			<p class="muted">Daily request count to withdraw</p>
 			<div class="chart">{{.RequestCountSVG}}</div>
 			<p class="footer">Rendered at: {{.RenderedAt.Format "2006-01-02 15:04:05 MST"}}</p>
 		</section>
@@ -241,7 +241,7 @@ func buildWithdrawnChartSVG(points []postgres.DailyFlowPoint) (string, error) {
 
 func buildRequestCountChartSVG(points []postgres.DailyFlowPoint) (string, error) {
 	p := plot.New()
-	p.Title.Text = "Umbrella Request Count"
+	p.Title.Text = "Umbrella Withdraw Request Count"
 	p.X.Label.Text = "Day"
 	p.Y.Label.Text = "Count"
 	p.X.Tick.Marker = dayTicks{}

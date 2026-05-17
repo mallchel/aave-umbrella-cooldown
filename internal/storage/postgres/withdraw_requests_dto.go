@@ -18,7 +18,6 @@ type WithdrawFlow struct {
 	EventType        string
 	AmountRaw        string
 	AmountNormalized string
-	AmountUSDT       string
 	UpdatedAt        time.Time
 }
 
