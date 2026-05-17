@@ -54,19 +54,14 @@ Expected tables include:
 
 ## 2. Configure environment
 
-Export required variables:
-
-```bash
-export POSTGRES_DSN="host=localhost port=5432 user=umbrella_user password=umbrella_pass dbname=umbrella_db sslmode=disable"
-export RPC_URL="https://ethereum-rpc.publicnode.com"
-```
-
 Optional variables:
 
 ```bash
 export UMBRELLA_CONFIG_PATH="./configs/umbrella/mainnet.json"
 export FINALITY_DEPTH="12"
 export INDEXER_BATCH_BLOCK_RANGE="2000"
+export POSTGRES_DSN="postgresql://umbrella_user:umbrella_pass@localhost:5432/umbrella_db?sslmode=disable"
+export RPC_URL="https://ethereum-rpc.publicnode.com"
 ```
 
 ## 3. Build and run
