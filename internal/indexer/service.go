@@ -87,11 +87,39 @@ func NewService(ctx context.Context, cfg Config, repo *postgres.Repository) (*Se
 	}, nil
 }
 
+func exponentialBackoff[T any](getter func() (T, error), currentBlock, toBlock uint64, ctx context.Context) (T, error) {
+	var data T
+	var err error
+	var zero T
+
+	for attempts := range 20 {
+		data, err = getter()
+
+		if err == nil {
+			break
+		}
+
+		if ctx.Err() != nil {
+			return zero, ctx.Err()
+		}
+
+		duration := 300 * time.Millisecond * time.Duration(attempts)
+		select {
+		case <-ctx.Done():
+			return zero, ctx.Err()
+		case <-time.After(duration):
+			fmt.Println("Using backoff for", currentBlock, toBlock, duration)
+		}
+	}
+
+	return data, err
+}
+
 // https://etherscan.io/tx/0xfa2d65feee27b96d70d5d2808c3b89f9d2b7240ed4ff37f679b88d55dba5c658
 var startBlock = uint64(16832680)
 
 // RunCycle processes one block range and returns true when something was indexed.
-func (s *Service) RunCycle(ctx context.Context, cancel context.CancelFunc) (bool, error) {
+func (s *Service) RunCycle(ctx context.Context) (bool, error) {
 	checkpoint, err := s.repo.GetIndexerState(ctx, s.cfg.IndexerStateName)
 
 	if err == sql.ErrNoRows {
@@ -143,20 +171,30 @@ func (s *Service) RunCycle(ctx context.Context, cancel context.CancelFunc) (bool
 				defer wg.Done()
 
 				fmt.Printf("Fetching batch: blocks %d to %d\n", currentBlock, toBlock)
-				logs, err := s.client.FilterLogs(ctx, ethereum.FilterQuery{
-					FromBlock: new(big.Int).SetUint64(currentBlock),
-					ToBlock:   new(big.Int).SetUint64(toBlock),
-					Addresses: []common.Address{s.cfg.ProxyAddress},
-					Topics: [][]common.Hash{{
-						s.cfg.CooldownTopic0,
-						s.cfg.WithdrawTopic0,
-					}},
-				})
-				if err != nil {
-					fmt.Printf("filter logs: %v", err)
-					cancel()
-					return
+
+				getLogs := func() ([]types.Log, error) {
+					logs, err := s.client.FilterLogs(ctx, ethereum.FilterQuery{
+						FromBlock: new(big.Int).SetUint64(currentBlock),
+						ToBlock:   new(big.Int).SetUint64(toBlock),
+						Addresses: []common.Address{s.cfg.ProxyAddress},
+						Topics: [][]common.Hash{{
+							s.cfg.CooldownTopic0,
+							s.cfg.WithdrawTopic0,
+						}},
+					})
+
+					if err != nil {
+						fmt.Printf("filter logs: %v", err)
+					}
+
+					return logs, err
 				}
+
+				logs, err := exponentialBackoff(getLogs, currentBlock, toBlock, ctx)
+				if err != nil {
+					panic(fmt.Sprintf("Failed to fetch logs for blocks %d to %d after retries: %v\n", currentBlock, toBlock, err))
+				}
+
 				mu.Lock()
 				if len(logs) > 0 {
 					hasProcessedLogs = true
@@ -173,11 +211,14 @@ func (s *Service) RunCycle(ctx context.Context, cancel context.CancelFunc) (bool
 
 					bt, ok := blockTimeCache[lg.BlockNumber]
 					if !ok {
-						h, err := s.client.HeaderByNumber(ctx, new(big.Int).SetUint64(lg.BlockNumber))
+						getHeader := func() (*types.Header, error) {
+							return s.client.HeaderByNumber(ctx, new(big.Int).SetUint64(lg.BlockNumber))
+						}
+
+						h, err := exponentialBackoff(getHeader, lg.BlockNumber, lg.BlockNumber, ctx)
+
 						if err != nil {
-							fmt.Printf("load block header %d: %v", lg.BlockNumber, err)
-							cancel()
-							return
+							panic(fmt.Sprintf("load block header %d: %v", lg.BlockNumber, err))
 						}
 						bt = time.Unix(int64(h.Time), 0).UTC()
 						blockTimeCache[lg.BlockNumber] = bt
@@ -186,15 +227,11 @@ func (s *Service) RunCycle(ctx context.Context, cancel context.CancelFunc) (bool
 					switch lg.Topics[0] {
 					case s.cfg.CooldownTopic0:
 						if err := s.handleCooldownLog(ctx, lg, bt); err != nil {
-							fmt.Printf("handle cooldown log: %v", err)
-							cancel()
-							return
+							panic(fmt.Sprintf("handle cooldown log: %v", err))
 						}
 					case s.cfg.WithdrawTopic0:
 						if err := s.handleWithdrawLog(ctx, lg, bt); err != nil {
-							fmt.Printf("handle withdraw log: %v", err)
-							cancel()
-							return
+							panic(fmt.Sprintf("handle withdraw log: %v", err))
 						}
 					}
 				}

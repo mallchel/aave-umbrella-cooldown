@@ -94,7 +94,7 @@ func runIndexCycle(svc *indexer.Service, isFirstRun bool) {
 	}
 	defer cancel()
 
-	processed, err := svc.RunCycle(ctx, cancel)
+	processed, err := svc.RunCycle(ctx)
 	if err != nil {
 		log.Printf("indexer cycle failed: %v", err)
 		return
