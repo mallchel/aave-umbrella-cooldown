@@ -99,7 +99,7 @@ var pageTpl = template.Must(template.New("home").Parse(`<!doctype html>
 </html>`))
 
 func main() {
-	addr := envutil.Get("HTTP_ADDR", ":8080")
+	addr := envutil.Get("HTTP_ADDR", ":8888")
 	dsn := envutil.Get("POSTGRES_DSN", "postgresql://umbrella_user:umbrella_pass@localhost:5432/umbrella_db?sslmode=disable")
 
 	repo, err := postgres.New(context.Background(), dsn)

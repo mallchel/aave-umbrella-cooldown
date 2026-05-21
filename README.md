@@ -1,6 +1,7 @@
 # Umbrella Cooldown Indexer
 
 Go monorepo with:
+
 - backend service (Chi)
 - daemon indexer (go-daemon)
 - PostgreSQL storage for cooldown events
@@ -9,9 +10,8 @@ The daemon indexes cooldown transactions and stores them in PostgreSQL.
 
 ## Requirements
 
-- Go 1.26+
-- PostgreSQL 14+
-- Ethereum RPC endpoint
+- Docker
+- Docker Compose
 
 ## Project Structure
 
@@ -22,87 +22,124 @@ The daemon indexes cooldown transactions and stores them in PostgreSQL.
 - migrations - SQL migrations
 - configs/umbrella/mainnet.json - chain and event config
 
-## 1. Prepare PostgreSQL
+## 1. Docker dev mode (hot reload)
 
-### Create user and database
+For day-to-day backend development, use the compose override file so source changes are bind-mounted and services auto-restart on code edits.
 
-Run in psql:
+### Start dev mode
 
-```sql
-CREATE ROLE umbrella_user WITH LOGIN PASSWORD 'umbrella_pass';
-CREATE DATABASE umbrella_db OWNER umbrella_user;
-GRANT ALL PRIVILEGES ON DATABASE umbrella_db TO umbrella_user;
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 ```
 
-### Apply migration
+This starts:
+
+- `postgres` with persistent volume
+- `migrate` one-shot migration container
+- `backend` with Air hot reload
+- `daemon` with Air hot reload
+
+### Edit code and see changes
+
+- Backend edits (for example `apps/backend` or `internal/**`) trigger rebuild/restart automatically.
+- Daemon edits (for example `apps/daemon` or `internal/**`) trigger rebuild/restart automatically.
+- JSON config changes also trigger reload.
+
+### View logs
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f backend daemon
+```
+
+### Test on localhost
+
+```bash
+curl -s http://localhost:8888/healthz
+```
+
+### Stop dev mode
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml down
+```
+
+### Reset database volume
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml down -v
+```
+
+## 2. Run with Docker locally
+
+This repository includes:
+
+- `Dockerfile` with multi-stage builds for backend and daemon
+- `docker-compose.yml` with services: `postgres`, `migrate`, `backend`, `daemon`
+
+### Start everything
 
 From repository root:
 
 ```bash
-psql "postgresql://umbrella_user:umbrella_pass@localhost:5432/umbrella_db?sslmode=disable" -f migrations/0001_init.sql
+docker compose up --build -d
 ```
 
-### Verify tables
+### Run migrations only
+
+```bash
+docker compose run --rm migrate
+```
+
+Migration files follow golang-migrate naming:
+
+- `migrations/000001_name.up.sql`
+- `migrations/000001_name.down.sql`
+
+Add a new migration by creating the next versioned pair (for example `000002_add_index.up.sql` and `000002_add_index.down.sql`), then run:
+
+```bash
+docker compose run --rm migrate
+```
+
+### Watch logs
+
+```bash
+docker compose logs -f migrate backend daemon
+```
+
+### Check backend
+
+```bash
+curl -s http://localhost:8888/healthz
+```
+
+### Verify tables from host (optional)
 
 ```bash
 psql "postgresql://umbrella_user:umbrella_pass@localhost:5432/umbrella_db?sslmode=disable" -c "\\dt"
 ```
 
 Expected tables include:
-- raw_withdraw_requests
+
+- raw_withdraw_flows
 - indexer_state
 
-## 2. Configure environment
-
-Optional variables:
+### Stop stack
 
 ```bash
-export UMBRELLA_CONFIG_PATH="./configs/umbrella/mainnet.json"
-export FINALITY_DEPTH="12"
-export INDEXER_BATCH_BLOCK_RANGE="2000"
-export POSTGRES_DSN="postgresql://umbrella_user:umbrella_pass@localhost:5432/umbrella_db?sslmode=disable"
-export RPC_URL="https://ethereum-rpc.publicnode.com"
+docker compose down
 ```
 
-## 3. Build and run
-
-From repository root:
+### Reset local database volume
 
 ```bash
-make build
+docker compose down -v
 ```
 
-Run backend in foreground:
+### Override RPC endpoint
 
 ```bash
-make run-backend
-```
-
-Run daemon in foreground:
-
-```bash
-make run-daemon
-```
-
-Run daemon as background process (go-daemon):
-
-```bash
-make daemon
-```
-
-Stop or inspect daemon:
-
-```bash
-make daemon-stop
-make daemon-status
-```
-
-## 4. Health check
-
-When backend is running:
-
-```bash
-curl -s http://localhost:8080/healthz
+RPC_URL="https://your-rpc.example" docker compose up --build -d daemon
 ```
 
 ## Notes

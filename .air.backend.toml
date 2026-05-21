@@ -1,0 +1,17 @@
+root = "."
+tmp_dir = "tmp/air-backend"
+
+[build]
+cmd = "go build -o ./tmp/air-backend/backend ./apps/backend"
+bin = "./tmp/air-backend/backend"
+full_bin = "./tmp/air-backend/backend"
+include_ext = ["go", "json"]
+exclude_dir = ["tmp", "vendor", "testdata"]
+exclude_regex = ["_test\\.go"]
+delay = 500
+stop_on_error = true
+send_interrupt = true
+kill_delay = 500
+
+[log]
+time = true

@@ -2,15 +2,30 @@
 
 help:
 	@echo "Available targets:"
-	@echo "  make fmt           - format Go sources"
-	@echo "  make tidy          - tidy go modules"
 	@echo "  make build         - build backend and daemon"
-	@echo "  make test          - run tests"
 	@echo "  make run-backend   - run backend in foreground"
 	@echo "  make run-daemon    - run daemon in foreground"
 	@echo "  make daemon        - start daemon in background (go-daemon)"
 	@echo "  make daemon-stop   - stop background daemon"
 	@echo "  make daemon-status - show daemon process status"
+
+docker-dev:
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+docker-read-logs:
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f backend daemon
+
+docker-dev-stop:
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml down
+
+docker-reset-volumes:
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml down -v
+
+docker-build:
+	docker compose up --build -d
+
+docker-migrations:
+	docker compose run --rm migrate
 
 build:
 	go build ./apps/backend ./apps/daemon

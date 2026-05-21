@@ -1,0 +1,42 @@
+services:
+  backend:
+    image: golang:1.26-alpine
+    working_dir: /workspace
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      HTTP_ADDR: ":8888"
+      POSTGRES_DSN: "postgresql://umbrella_user:umbrella_pass@postgres:5432/umbrella_db?sslmode=disable"
+      CGO_ENABLED: "0"
+    command: >
+      sh -c "apk add --no-cache git && go install github.com/air-verse/air@latest && air -c .air.backend.toml"
+    ports:
+      - "8888:8888"
+    volumes:
+      - .:/workspace
+      - go_pkg_mod:/go/pkg/mod
+      - go_build_cache:/root/.cache/go-build
+
+  daemon:
+    image: golang:1.26-alpine
+    working_dir: /workspace
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DAEMON_FOREGROUND: "1"
+      UMBRELLA_CONFIG_PATH: "./configs/umbrella/mainnet.json"
+      POSTGRES_DSN: "postgresql://umbrella_user:umbrella_pass@postgres:5432/umbrella_db?sslmode=disable"
+      RPC_URL: "https://ethereum-rpc.publicnode.com"
+      CGO_ENABLED: "0"
+    command: >
+      sh -c "apk add --no-cache git && go install github.com/air-verse/air@latest && air -c .air.daemon.toml"
+    volumes:
+      - .:/workspace
+      - go_pkg_mod:/go/pkg/mod
+      - go_build_cache:/root/.cache/go-build
+
+volumes:
+  go_pkg_mod:
+  go_build_cache:

@@ -15,7 +15,7 @@ The architecture requires:
 We document architecture decisions using MADR files under `docs/adr/`.
 
 We keep PostgreSQL as the persistence backend and implement a repository layer in code for:
-- `raw_withdraw_requests`
+- `raw_withdraw_flows`
 - `indexer_state`
 
 Schema source of truth is the SQL migration:
@@ -35,5 +35,5 @@ Trade-offs:
 ## Follow-up
 
 Potential next ADRs:
-- indexing strategy and partitioning for `raw_withdraw_requests`
+- indexing strategy and partitioning for `raw_withdraw_flows`
 - migration strategy for schema-breaking updates
