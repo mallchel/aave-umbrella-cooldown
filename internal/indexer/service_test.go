@@ -5,15 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"math/big"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"1-task/internal/indexer/bindings"
 	"1-task/internal/storage/postgres"
 
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 )
@@ -136,7 +135,7 @@ func TestRunCycle_ProcessesLogsAndAdvancesCheckpoint(t *testing.T) {
 	repo := &mockRepository{state: postgres.IndexerState{LastProcessedBlock: startBlock}}
 	rpc := &mockRPCClient{latestBlock: startBlock + 5}
 
-	parsedABI, err := abi.JSON(strings.NewReader(stakeTokenABI))
+	parsedABI, err := bindings.UmbrellaStakeTokenMetaData.GetAbi()
 	if err != nil {
 		t.Fatalf("parse abi: %v", err)
 	}
@@ -198,7 +197,7 @@ func TestRunCycle_ProcessesLogsWithManyLogs(t *testing.T) {
 	repo := &mockRepository{getErr: sql.ErrNoRows}
 	rpc := &mockRPCClient{latestBlock: startBlock + 1000000}
 
-	parsedABI, err := abi.JSON(strings.NewReader(stakeTokenABI))
+	parsedABI, err := bindings.UmbrellaStakeTokenMetaData.GetAbi()
 	if err != nil {
 		t.Fatalf("parse abi: %v", err)
 	}
@@ -288,7 +287,7 @@ func TestRunCycle_ReturnsErrorWhenGetCheckpointFails(t *testing.T) {
 
 func newTestService(t *testing.T, rpc rpcClient, repo repository) *Service {
 	t.Helper()
-	parsedABI, err := abi.JSON(strings.NewReader(stakeTokenABI))
+	parsedABI, err := bindings.UmbrellaStakeTokenMetaData.GetAbi()
 	if err != nil {
 		t.Fatalf("parse abi: %v", err)
 	}
@@ -304,6 +303,6 @@ func newTestService(t *testing.T, rpc rpcClient, repo repository) *Service {
 		},
 		client:      rpc,
 		repo:        repo,
-		contractABI: parsedABI,
+		contractABI: *parsedABI,
 	}
 }

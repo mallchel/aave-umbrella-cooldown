@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"math/big"
-	"strings"
 	"sync"
 	"time"
 
@@ -19,23 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
-
-const stakeTokenABI = `[
-	{"type":"event","name":"StakerCooldownUpdated","anonymous":false,"inputs":[
-		{"indexed":true,"name":"user","type":"address"},
-		{"indexed":false,"name":"amount","type":"uint256"},
-		{"indexed":false,"name":"endOfCooldown","type":"uint256"},
-		{"indexed":false,"name":"unstakeWindow","type":"uint256"}
-	]},
-	{"type":"event","name":"Withdraw","anonymous":false,"inputs":[
-		{"indexed":true,"name":"sender","type":"address"},
-		{"indexed":true,"name":"receiver","type":"address"},
-		{"indexed":true,"name":"owner","type":"address"},
-		{"indexed":false,"name":"assets","type":"uint256"},
-		{"indexed":false,"name":"shares","type":"uint256"}
-	]},
-  {"type":"function","name":"asset","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"address"}]}
-]`
 
 type cooldownEvent struct {
 	Amount        *big.Int
@@ -85,7 +67,7 @@ func NewService(ctx context.Context, cfg Config, repo *postgres.Repository) (*Se
 		return nil, fmt.Errorf("dial rpc: %w", err)
 	}
 
-	parsedABI, err := abi.JSON(stringsReader(stakeTokenABI))
+	parsedABI, err := bindings.UmbrellaStakeTokenMetaData.GetAbi()
 	if err != nil {
 		return nil, fmt.Errorf("parse stake token abi: %w", err)
 	}
@@ -100,7 +82,7 @@ func NewService(ctx context.Context, cfg Config, repo *postgres.Repository) (*Se
 		cfg:           cfg,
 		client:        client,
 		repo:          repo,
-		contractABI:   parsedABI,
+		contractABI:   *parsedABI,
 		assetDecimals: assetDecimals,
 	}, nil
 }
@@ -301,10 +283,6 @@ func (s *Service) handleWithdrawLog(ctx context.Context, lg types.Log, blockTime
 	}
 
 	return nil
-}
-
-func stringsReader(s string) *strings.Reader {
-	return strings.NewReader(s)
 }
 
 func readAssetDecimals(ctx context.Context, client *ethclient.Client, proxy common.Address) (uint8, error) {
