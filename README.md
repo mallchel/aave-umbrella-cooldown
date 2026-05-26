@@ -15,12 +15,15 @@ The daemon indexes cooldown transactions and stores them in PostgreSQL.
 
 ## Project Structure
 
-- apps/backend - HTTP backend
-- apps/daemon - background indexer daemon
+- cmd/backend - HTTP backend entrypoint
+- cmd/daemon - background indexer entrypoint
 - internal/indexer - on-chain indexing logic
 - internal/storage/postgres - repository layer
+- build/docker/Dockerfile - multi-stage backend/daemon images
+- scripts - local build/run helpers used by Make targets
 - migrations - SQL migrations
 - configs/umbrella/mainnet.json - chain and event config
+- tmp - runtime-generated artifacts (PID files, daemon logs, Air binaries)
 
 ## 1. Docker dev mode (hot reload)
 
@@ -41,8 +44,8 @@ This starts:
 
 ### Edit code and see changes
 
-- Backend edits (for example `apps/backend` or `internal/**`) trigger rebuild/restart automatically.
-- Daemon edits (for example `apps/daemon` or `internal/**`) trigger rebuild/restart automatically.
+- Backend edits (for example `cmd/backend` or `internal/**`) trigger rebuild/restart automatically.
+- Daemon edits (for example `cmd/daemon` or `internal/**`) trigger rebuild/restart automatically.
 - JSON config changes also trigger reload.
 
 ### View logs
@@ -73,7 +76,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml down -v
 
 This repository includes:
 
-- `Dockerfile` with multi-stage builds for backend and daemon
+- `build/docker/Dockerfile` with multi-stage builds for backend and daemon
 - `docker-compose.yml` with services: `postgres`, `migrate`, `backend`, `daemon`
 
 ### Start everything

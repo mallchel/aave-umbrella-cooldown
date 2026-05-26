@@ -28,17 +28,16 @@ docker-migrations:
 	docker compose run --rm migrate
 
 build:
-	go build ./apps/backend ./apps/daemon
+	sh ./scripts/build.sh
 
 run-backend:
-	go run ./apps/backend
+	sh ./scripts/run-backend.sh
 
 run-daemon:
-	DAEMON_FOREGROUND=1 go run ./apps/daemon
+	sh ./scripts/run-daemon.sh
 
 daemon:
-	mkdir -p ./tmp
-	go run ./apps/daemon
+	sh ./scripts/start-daemon.sh
 
 daemon-stop:
 	@if [ -f ./tmp/umbrella-daemon.pid ]; then \

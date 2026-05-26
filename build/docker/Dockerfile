@@ -9,8 +9,8 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/backend ./apps/backend && \
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/daemon ./apps/daemon
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/backend ./cmd/backend && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/daemon ./cmd/daemon
 
 FROM alpine:3.21 AS base-runtime
 

@@ -2,7 +2,7 @@ root = "."
 tmp_dir = "tmp/air-backend"
 
 [build]
-cmd = "go build -o ./tmp/air-backend/backend ./apps/backend"
+cmd = "go build -o ./tmp/air-backend/backend ./cmd/backend"
 bin = "./tmp/air-backend/backend"
 full_bin = "./tmp/air-backend/backend"
 include_ext = ["go", "json"]
