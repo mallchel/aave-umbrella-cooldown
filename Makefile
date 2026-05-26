@@ -1,6 +1,6 @@
 .PHONY: help \
 	docker-dev docker-read-logs docker-dev-stop docker-reset-volumes docker-build docker-migrations \
-	build run-backend run-daemon daemon daemon-stop daemon-status
+	build run-backend run-daemon daemon daemon-stop daemon-status sqlc-generate
 
 help:
 	@echo "Available targets:"
@@ -11,6 +11,7 @@ help:
 	@echo "  make docker-build     - build and start docker services"
 	@echo "  make docker-migrations - run migrations container"
 	@echo "  make build         - build backend and daemon"
+	@echo "  make sqlc-generate - generate sqlc code"
 	@echo "  make run-backend   - run backend in foreground"
 	@echo "  make run-daemon    - run daemon in foreground"
 	@echo "  make daemon        - start daemon in background (go-daemon)"
@@ -37,6 +38,9 @@ docker-migrations:
 
 build:
 	sh ./scripts/build.sh
+
+sqlc-generate:
+	go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.29.0 generate -f internal/storage/postgres/queries/sqlc.yaml
 
 run-backend:
 	sh ./scripts/run-backend.sh

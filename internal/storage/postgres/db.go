@@ -2,34 +2,33 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
+	"1-task/internal/storage/postgres/queries"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 // Repository provides PostgreSQL access for queue and indexer data.
 type Repository struct {
-	db *gorm.DB
+	db *sql.DB
+	q  *queries.Queries
 }
 
 // New creates a new PostgreSQL repository.
 func New(ctx context.Context, dsn string) (*Repository, error) {
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open postgres: %w", err)
 	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		return nil, fmt.Errorf("open sql db from gorm: %w", err)
-	}
 
-	if err := sqlDB.PingContext(ctx); err != nil {
-		_ = sqlDB.Close()
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
 
-	return &Repository{db: db}, nil
+	return &Repository{db: db, q: queries.New(db)}, nil
 }
 
 // Close closes the underlying DB pool.
@@ -37,9 +36,5 @@ func (r *Repository) Close() error {
 	if r == nil || r.db == nil {
 		return nil
 	}
-	sqlDB, err := r.db.DB()
-	if err != nil {
-		return fmt.Errorf("get sql db from gorm: %w", err)
-	}
-	return sqlDB.Close()
+	return r.db.Close()
 }
