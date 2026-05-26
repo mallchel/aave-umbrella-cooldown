@@ -1,7 +1,15 @@
-.PHONY: help fmt tidy build test run-backend run-daemon daemon daemon-stop daemon-status
+.PHONY: help \
+	docker-dev docker-read-logs docker-dev-stop docker-reset-volumes docker-build docker-migrations \
+	build run-backend run-daemon daemon daemon-stop daemon-status
 
 help:
 	@echo "Available targets:"
+	@echo "  make docker-dev       - start docker services in dev mode"
+	@echo "  make docker-read-logs - tail backend and daemon logs"
+	@echo "  make docker-dev-stop  - stop docker dev services"
+	@echo "  make docker-reset-volumes - stop services and remove volumes"
+	@echo "  make docker-build     - build and start docker services"
+	@echo "  make docker-migrations - run migrations container"
 	@echo "  make build         - build backend and daemon"
 	@echo "  make run-backend   - run backend in foreground"
 	@echo "  make run-daemon    - run daemon in foreground"
