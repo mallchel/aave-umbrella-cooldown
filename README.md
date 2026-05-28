@@ -116,6 +116,21 @@ docker compose logs -f migrate backend daemon
 curl -s http://localhost:8888/healthz
 ```
 
+### Query withdraw flows (GET + DB filters)
+
+```bash
+curl -s "http://localhost:8888/withdraw-flows?event_type=request&limit=20"
+```
+
+Available query params:
+
+- sender_address (string)
+- event_type (request|withdraw)
+- from_time (RFC3339)
+- to_time (RFC3339)
+- limit (1-500, default 100)
+- offset (>=0, default 0)
+
 ### Verify tables from host (optional)
 
 ```bash
