@@ -21,6 +21,7 @@ func (s *Server) routes() http.Handler {
 	r.Get("/healthz", s.handleHealth)
 	r.Get("/withdraw-flows", s.handleListWithdrawFlows)
 	r.Get("/chart", s.handleRenderChart)
+	r.Get("/daily-series-data", s.handleDailySeriesData)
 	return r
 }
 

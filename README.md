@@ -122,6 +122,19 @@ curl -s http://localhost:8888/healthz
 curl -s "http://localhost:8888/withdraw-flows?event_type=request&limit=20"
 ```
 
+### Query daily series raw JSON data
+
+```bash
+curl -s "http://localhost:8888/daily-series-data"
+```
+
+Returns a JSON array of daily points with fields:
+
+- day
+- requested
+- withdrawn
+- request_count
+
 Available query params:
 
 - sender_address (string)

@@ -35,6 +35,13 @@ type listWithdrawFlowsResponse struct {
 	Meta  listWithdrawFlowsMeta `json:"meta"`
 }
 
+type dailySeriesDataPoint struct {
+	Day          string  `json:"day"`
+	Requested    float64 `json:"requested"`
+	Withdrawn    float64 `json:"withdrawn"`
+	RequestCount float64 `json:"request_count"`
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -106,4 +113,24 @@ func (s *Server) handleRenderChart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("render page: %v", err), http.StatusInternalServerError)
 		return
 	}
+}
+
+func (s *Server) handleDailySeriesData(w http.ResponseWriter, r *http.Request) {
+	points, err := s.repo.ListDailyFlowPoints(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: "query daily series data"})
+		return
+	}
+
+	items := make([]dailySeriesDataPoint, 0, len(points))
+	for _, point := range points {
+		items = append(items, dailySeriesDataPoint{
+			Day:          point.Day.UTC().Format("2006-01-02"),
+			Requested:    point.Requested,
+			Withdrawn:    point.Withdrawn,
+			RequestCount: point.RequestCount,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, items)
 }
