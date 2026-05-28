@@ -20,6 +20,7 @@ func (s *Server) routes() http.Handler {
 	r := chi.NewRouter()
 	r.Get("/healthz", s.handleHealth)
 	r.Get("/withdraw-flows", s.handleListWithdrawFlows)
+	r.Get("/chart", s.handleRenderChart)
 	return r
 }
 

@@ -1,7 +1,8 @@
 package backend
 
 import (
-	"encoding/json"
+	"fmt"
+	"html/template"
 	"net/http"
 	"time"
 )
@@ -77,20 +78,32 @@ func (s *Server) handleListWithdrawFlows(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-func writeJSON(w http.ResponseWriter, statusCode int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	_ = json.NewEncoder(w).Encode(body)
-}
+func (s *Server) handleRenderChart(w http.ResponseWriter, r *http.Request) {
+	points, err := s.repo.ListDailyFlowPoints(r.Context())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("query chart data: %v", err), http.StatusInternalServerError)
+		return
+	}
 
-func badParam(message string) error {
-	return &paramError{message: message}
-}
+	requestedSvg, err := buildRequestedChartSVG(points)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("render chart: %v", err), http.StatusInternalServerError)
+		return
+	}
+	withdrawnSvg, err := buildWithdrawnChartSVG(points)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("render chart: %v", err), http.StatusInternalServerError)
+		return
+	}
+	requestCountSvg, err := buildRequestCountChartSVG(points)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("render chart: %v", err), http.StatusInternalServerError)
+		return
+	}
 
-type paramError struct {
-	message string
-}
-
-func (e *paramError) Error() string {
-	return e.message
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := chartPageTpl.Execute(w, chartPageData{RenderedAt: time.Now(), RequestedSVG: template.HTML(requestedSvg), WithdrawnSVG: template.HTML(withdrawnSvg), RequestCountSVG: template.HTML(requestCountSvg)}); err != nil {
+		http.Error(w, fmt.Sprintf("render page: %v", err), http.StatusInternalServerError)
+		return
+	}
 }
