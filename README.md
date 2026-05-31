@@ -178,3 +178,29 @@ RPC_URL="https://your-rpc.example" docker compose up --build -d daemon
 - Indexer checkpoint is stored in PostgreSQL table indexer_state.
 - Startup block is derived from checkpoint state, not an env start block.
 - Current indexing mode is cooldown-only event tracking.
+
+## API Documentation
+
+OpenAPI source of truth is stored in YAML:
+
+- `docs/openapi/openapi.yaml`
+
+Generate JSON from YAML with:
+
+```bash
+make openapi-json
+```
+
+This writes:
+
+- `docs/openapi/openapi.json`
+
+Serve interactive Swagger UI from the generated JSON with:
+
+```bash
+make openapi-docs
+```
+
+Then open:
+
+- `http://localhost:9090`

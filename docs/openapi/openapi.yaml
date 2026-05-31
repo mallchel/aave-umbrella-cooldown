@@ -1,0 +1,220 @@
+openapi: 3.0.3
+info:
+  title: Umbrella Cooldown Backend API
+  version: 0.1.0
+  description: HTTP API for health checks and cooldown withdrawal flow data.
+servers:
+  - url: http://localhost:8888
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /withdraw-flows:
+    get:
+      summary: List raw withdrawal flow events
+      operationId: listWithdrawFlows
+      parameters:
+        - in: query
+          name: sender_address
+          description: Filter by sender address.
+          schema:
+            type: string
+        - in: query
+          name: event_type
+          description: Filter by cooldown event type.
+          schema:
+            type: string
+            enum: [request, withdraw]
+        - in: query
+          name: from_time
+          description: Include rows with block time >= this timestamp (RFC3339).
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: to_time
+          description: Include rows with block time <= this timestamp (RFC3339).
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: limit
+          description: Maximum number of items. Default 100, capped at 500.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - in: query
+          name: offset
+          description: Number of rows to skip.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: List of withdrawal flow events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListWithdrawFlowsResponse"
+        "400":
+          description: Invalid request parameters.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /daily-series-data:
+    get:
+      summary: List daily chart series points
+      operationId: listDailySeriesData
+      responses:
+        "200":
+          description: Daily aggregated time-series points.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DailySeriesDataPoint"
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /chart:
+    get:
+      summary: Render HTML dashboard with SVG charts
+      operationId: renderChartPage
+      responses:
+        "200":
+          description: HTML page containing embedded chart SVGs.
+          content:
+            text/html:
+              schema:
+                type: string
+        "500":
+          description: Internal server error.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    ListWithdrawFlowsMeta:
+      type: object
+      required: [count, limit, offset]
+      properties:
+        count:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    WithdrawFlowItem:
+      type: object
+      required:
+        [
+          chain_id,
+          tx_hash,
+          log_index,
+          block_number,
+          block_time,
+          sender_address,
+          event_type,
+          amount_raw,
+          amount_normalized,
+          updated_at,
+        ]
+      properties:
+        chain_id:
+          type: integer
+          format: int64
+        tx_hash:
+          type: string
+        log_index:
+          type: integer
+          format: int32
+        block_number:
+          type: integer
+          format: int64
+        block_time:
+          type: string
+          format: date-time
+        sender_address:
+          type: string
+        event_type:
+          type: string
+          enum: [request, withdraw]
+        amount_raw:
+          type: string
+        amount_normalized:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+
+    ListWithdrawFlowsResponse:
+      type: object
+      required: [items, meta]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WithdrawFlowItem"
+        meta:
+          $ref: "#/components/schemas/ListWithdrawFlowsMeta"
+
+    DailySeriesDataPoint:
+      type: object
+      required: [day, requested, withdrawn, request_count]
+      properties:
+        day:
+          type: string
+          format: date
+          example: "2026-05-31"
+        requested:
+          type: number
+          format: double
+        withdrawn:
+          type: number
+          format: double
+        request_count:
+          type: number
+          format: double
