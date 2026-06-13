@@ -32,7 +32,7 @@ For day-to-day backend development, use the compose override file so source chan
 ### Start dev mode
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+make docker-dev
 ```
 
 This starts:
@@ -51,7 +51,7 @@ This starts:
 ### View logs
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f backend daemon
+make docker-read-logs
 ```
 
 ### Test on localhost
@@ -60,16 +60,40 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f backend d
 curl -s http://localhost:8888/healthz
 ```
 
+Grafana is available at:
+
+```bash
+open http://localhost:3030
+```
+
+Default local login:
+
+- user: `admin`
+- password: `admin`
+
+Grafana datasource and dashboards are provisioned from repository files:
+
+- `configs/grafana/provisioning/datasources/postgres.yml`
+- `configs/grafana/provisioning/dashboards/umbrella.yml`
+- `configs/grafana/dashboards/*.json`
+
+To save dashboard settings in git, update or export dashboard JSON into `configs/grafana/dashboards/`, then restart the dev stack:
+
+```bash
+make docker-dev-stop
+make docker-dev
+```
+
 ### Stop dev mode
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml down
+make docker-dev-stop
 ```
 
 ### Reset database volume
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml down -v
+make docker-reset-volumes
 ```
 
 ## 2. Run with Docker locally
@@ -84,13 +108,13 @@ This repository includes:
 From repository root:
 
 ```bash
-docker compose up --build -d
+make docker-build
 ```
 
 ### Run migrations only
 
 ```bash
-docker compose run --rm migrate
+make docker-migrations
 ```
 
 Migration files follow golang-migrate naming:
@@ -101,13 +125,13 @@ Migration files follow golang-migrate naming:
 Add a new migration by creating the next versioned pair (for example `000002_add_index.up.sql` and `000002_add_index.down.sql`), then run:
 
 ```bash
-docker compose run --rm migrate
+make docker-migrations
 ```
 
 ### Watch logs
 
 ```bash
-docker compose logs -f migrate backend daemon
+make docker-read-logs
 ```
 
 ### Check backend
@@ -158,19 +182,19 @@ Expected tables include:
 ### Stop stack
 
 ```bash
-docker compose down
+make docker-dev-stop
 ```
 
 ### Reset local database volume
 
 ```bash
-docker compose down -v
+make docker-reset-volumes
 ```
 
 ### Override RPC endpoint
 
 ```bash
-RPC_URL="https://your-rpc.example" docker compose up --build -d daemon
+RPC_URL="https://your-rpc.example" make docker-build
 ```
 
 ## Notes

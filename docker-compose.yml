@@ -59,5 +59,22 @@ services:
       POSTGRES_DSN: "postgresql://umbrella_user:umbrella_pass@postgres:5432/umbrella_db?sslmode=disable"
       RPC_URL: "https://ethereum-rpc.publicnode.com"
 
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: umbrella-grafana
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    ports:
+      - "3030:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./configs/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./configs/grafana/dashboards:/var/lib/grafana/dashboards:ro
+
 volumes:
   postgres_data:
+  grafana_data:

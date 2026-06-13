@@ -1,0 +1,16 @@
+apiVersion: 1
+
+datasources:
+  - name: Umbrella Postgres
+    uid: umbrella-postgres
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    database: umbrella_db
+    user: umbrella_user
+    secureJsonData:
+      password: umbrella_pass
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
