@@ -1,6 +1,6 @@
 .PHONY: help \
 	docker-dev docker-read-logs docker-dev-stop docker-reset-volumes docker-build docker-migrations \
-	build run-backend run-daemon daemon daemon-stop daemon-status sqlc-generate openapi-json openapi-check openapi-docs
+	build run-backend daemon-foreground daemon daemon-stop daemon-status sqlc-generate openapi-json openapi-check openapi-docs
 
 help:
 	@echo "Available targets:"
@@ -16,7 +16,7 @@ help:
 	@echo "  make openapi-check - verify docs/openapi/openapi.json matches docs/openapi/openapi.yaml"
 	@echo "  make openapi-docs  - serve Swagger UI at http://localhost:9090"
 	@echo "  make run-backend   - run backend in foreground"
-	@echo "  make run-daemon    - run daemon in foreground"
+	@echo "  make daemon-foreground    - run daemon in foreground"
 	@echo "  make daemon        - start daemon in background (go-daemon)"
 	@echo "  make daemon-stop   - stop background daemon"
 	@echo "  make daemon-status - show daemon process status"
@@ -59,8 +59,8 @@ openapi-docs:
 run-backend:
 	sh ./scripts/run-backend.sh
 
-run-daemon:
-	sh ./scripts/run-daemon.sh
+daemon-foreground:
+	sh ./scripts/daemon-foreground.sh
 
 daemon:
 	sh ./scripts/start-daemon.sh
