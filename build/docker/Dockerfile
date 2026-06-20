@@ -24,7 +24,7 @@ FROM base-runtime AS backend-runtime
 
 COPY --from=builder /out/backend /app/backend
 
-EXPOSE 8888
+EXPOSE 8888 9090
 
 ENTRYPOINT ["/app/backend"]
 

@@ -24,14 +24,14 @@ func writeJSON(w http.ResponseWriter, statusCode int, body any) {
 }
 
 func badParam(message string) error {
-	return &paramError{message: message}
+	return &ParamError{message: message}
 }
 
-type paramError struct {
+type ParamError struct {
 	message string
 }
 
-func (e *paramError) Error() string {
+func (e *ParamError) Error() string {
 	return e.message
 }
 

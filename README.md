@@ -2,7 +2,7 @@
 
 Go monorepo with:
 
-- backend service (Chi)
+- backend service generated from OpenAPI with oapi-codegen and Chi
 - daemon indexer (go-daemon)
 - PostgreSQL storage for cooldown events
 
@@ -58,6 +58,12 @@ make docker-read-logs
 
 ```bash
 curl -s http://localhost:8888/healthz
+```
+
+Swagger UI is served by the same backend process on a separate port:
+
+```bash
+open http://localhost:9090
 ```
 
 Grafana is available at:
@@ -209,6 +215,16 @@ OpenAPI source of truth is stored in YAML:
 
 - `docs/openapi/openapi.yaml`
 
+The backend HTTP server glue and response/request types are generated from that contract with oapi-codegen:
+
+```bash
+make openapi-generate
+```
+
+This writes:
+
+- `internal/backend/openapi.gen.go`
+
 Generate JSON from YAML with:
 
 ```bash
@@ -219,12 +235,10 @@ This writes:
 
 - `docs/openapi/openapi.json`
 
-Serve interactive Swagger UI from the generated JSON with:
-
-```bash
-make openapi-docs
-```
-
-Then open:
+Interactive Swagger UI is served by the backend binary without an extra container:
 
 - `http://localhost:9090`
+
+The API itself remains available on:
+
+- `http://localhost:8888`

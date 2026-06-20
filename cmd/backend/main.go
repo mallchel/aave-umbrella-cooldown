@@ -24,20 +24,31 @@ func main() {
 
 	server := backend.NewServer(repo)
 
-	log.Printf("backend listening on %s", cfg.HTTPAddr)
-	if err := server.Run(cfg.HTTPAddr); err != nil {
-		log.Fatal(err)
-	}
+	errCh := make(chan error, 2)
+
+	log.Printf("backend API listening on %s", cfg.HTTPAddr)
+	go func() {
+		errCh <- server.Run(cfg.HTTPAddr)
+	}()
+
+	log.Printf("swagger UI listening on %s", cfg.SwaggerAddr)
+	go func() {
+		errCh <- server.RunSwaggerUI(cfg.SwaggerAddr)
+	}()
+
+	log.Fatal(<-errCh)
 }
 
 type config struct {
 	HTTPAddr    string
+	SwaggerAddr string
 	PostgresDSN string
 }
 
 func loadConfig() config {
 	return config{
 		HTTPAddr:    envutil.Get("HTTP_ADDR", ":8888"),
+		SwaggerAddr: envutil.Get("SWAGGER_ADDR", ":9090"),
 		PostgresDSN: envutil.Get("POSTGRES_DSN", "postgresql://umbrella_user:umbrella_pass@localhost:5432/umbrella_db?sslmode=disable"),
 	}
 }

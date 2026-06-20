@@ -3,9 +3,8 @@ package backend
 import (
 	"net/http"
 
+	openapidocs "1-task/docs/openapi"
 	"1-task/internal/storage/postgres"
-
-	"github.com/go-chi/chi/v5"
 )
 
 type Server struct {
@@ -17,14 +16,71 @@ func NewServer(repo *postgres.Repository) *Server {
 }
 
 func (s *Server) routes() http.Handler {
-	r := chi.NewRouter()
-	r.Get("/healthz", s.handleHealth)
-	r.Get("/withdraw-flows", s.handleListWithdrawFlows)
-	r.Get("/chart", s.handleRenderChart)
-	r.Get("/daily-series-data", s.handleDailySeriesData)
-	return r
+	return HandlerWithOptions(s, ChiServerOptions{
+		ErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
+			writeJSON(w, http.StatusBadRequest, ApiError{Error: err.Error()})
+		},
+	})
 }
 
 func (s *Server) Run(addr string) error {
 	return http.ListenAndServe(addr, s.routes())
 }
+
+func (s *Server) docsRoutes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/openapi.yaml", serveOpenAPIYAML)
+	mux.HandleFunc("/openapi.json", serveOpenAPIJSON)
+	mux.HandleFunc("/", serveSwaggerUI)
+	return mux
+}
+
+func (s *Server) RunSwaggerUI(addr string) error {
+	return http.ListenAndServe(addr, s.docsRoutes())
+}
+
+func serveOpenAPIYAML(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+	_, _ = w.Write(openapidocs.OpenAPIYAML)
+}
+
+func serveOpenAPIJSON(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_, _ = w.Write(openapidocs.OpenAPIJSON)
+}
+
+func serveSwaggerUI(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" && r.URL.Path != "/swagger" {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(swaggerUIHTML))
+}
+
+const swaggerUIHTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Umbrella Cooldown API</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+  <style>
+    body { margin: 0; background: #fafafa; }
+  </style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    window.onload = function() {
+      window.ui = SwaggerUIBundle({
+        url: "/openapi.yaml",
+        dom_id: "#swagger-ui"
+      });
+    };
+  </script>
+</body>
+</html>
+`

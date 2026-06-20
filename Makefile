@@ -1,6 +1,6 @@
 .PHONY: help \
 	docker-dev docker-read-logs docker-dev-stop docker-reset-volumes docker-build docker-migrations \
-	build run-backend daemon-foreground daemon daemon-stop daemon-status sqlc-generate openapi-json openapi-check openapi-docs
+	build run-backend daemon-foreground daemon daemon-stop daemon-status sqlc-generate openapi-generate openapi-json openapi-check
 
 help:
 	@echo "Available targets:"
@@ -12,9 +12,9 @@ help:
 	@echo "  make docker-migrations - run migrations container"
 	@echo "  make build         - build backend and daemon"
 	@echo "  make sqlc-generate - generate sqlc code"
+	@echo "  make openapi-generate - generate Go HTTP server from docs/openapi/openapi.yaml"
 	@echo "  make openapi-json  - generate OpenAPI JSON from docs/openapi/openapi.yaml"
-	@echo "  make openapi-check - verify docs/openapi/openapi.json matches docs/openapi/openapi.yaml"
-	@echo "  make openapi-docs  - serve Swagger UI at http://localhost:9090"
+	@echo "  make openapi-check - verify generated OpenAPI artifacts match docs/openapi/openapi.yaml"
 	@echo "  make run-backend   - run backend in foreground"
 	@echo "  make daemon-foreground    - run daemon in foreground"
 	@echo "  make daemon        - start daemon in background (go-daemon)"
@@ -45,16 +45,17 @@ build:
 sqlc-generate:
 	go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.29.0 generate -f internal/storage/postgres/queries/sqlc.yaml
 
+openapi-generate:
+	go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.0 -package backend -generate types,chi-server -o internal/backend/openapi.gen.go docs/openapi/openapi.yaml
+
 openapi-json:
 	docker run --rm -v "$$(pwd):/workdir" -w /workdir mikefarah/yq -o=json '.' docs/openapi/openapi.yaml > docs/openapi/openapi.json
 
 openapi-check:
 	@$(MAKE) openapi-json
 	@git diff --exit-code -- docs/openapi/openapi.json
-
-openapi-docs:
-	@$(MAKE) openapi-json
-	docker run --rm -p 9090:8080 -e SWAGGER_JSON=/spec/openapi.json -v "$$(pwd)/docs/openapi:/spec" swaggerapi/swagger-ui
+	@$(MAKE) openapi-generate
+	@git diff --exit-code -- internal/backend/openapi.gen.go
 
 run-backend:
 	sh ./scripts/run-backend.sh
