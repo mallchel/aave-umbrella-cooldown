@@ -25,7 +25,6 @@ func TestGeneratedRoutesAreRegistered(t *testing.T) {
 		path       string
 		wantStatus int
 	}{
-		{name: "chart", path: "/chart", wantStatus: http.StatusNotImplemented},
 		{name: "daily series data", path: "/daily-series-data", wantStatus: http.StatusNotImplemented},
 		{name: "health", path: "/healthz", wantStatus: http.StatusNotImplemented},
 		{name: "withdraw flows", path: "/withdraw-flows", wantStatus: http.StatusNotImplemented},

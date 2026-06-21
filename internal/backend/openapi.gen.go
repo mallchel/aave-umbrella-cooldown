@@ -99,9 +99,6 @@ type ListWithdrawFlowsParamsEventType string
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
-	// Render HTML dashboard with SVG charts
-	// (GET /chart)
-	RenderChartPage(w http.ResponseWriter, r *http.Request)
 	// List daily chart series points
 	// (GET /daily-series-data)
 	ListDailySeriesData(w http.ResponseWriter, r *http.Request)
@@ -116,12 +113,6 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
-
-// Render HTML dashboard with SVG charts
-// (GET /chart)
-func (_ Unimplemented) RenderChartPage(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
 
 // List daily chart series points
 // (GET /daily-series-data)
@@ -149,20 +140,6 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
-
-// RenderChartPage operation middleware
-func (siw *ServerInterfaceWrapper) RenderChartPage(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RenderChartPage(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
 
 // ListDailySeriesData operation middleware
 func (siw *ServerInterfaceWrapper) ListDailySeriesData(w http.ResponseWriter, r *http.Request) {
@@ -372,9 +349,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/chart", wrapper.RenderChartPage)
-	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/daily-series-data", wrapper.ListDailySeriesData)
 	})
