@@ -19,6 +19,8 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
+//go:generate go run go.uber.org/mock/mockgen@v0.6.0 -source=$GOFILE -destination=mocks_test.go -package=$GOPACKAGE
+
 type cooldownEvent struct {
 	Amount        *big.Int
 	EndOfCooldown *big.Int
@@ -30,14 +32,14 @@ type withdrawEvent struct {
 	Shares *big.Int
 }
 
-type rpcClient interface {
+type RPCClient interface {
 	BlockNumber(ctx context.Context) (uint64, error)
 	FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
 	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
 	Close()
 }
 
-type repository interface {
+type Repository interface {
 	GetIndexerState(ctx context.Context, name string) (postgres.IndexerState, error)
 	SaveIndexerState(ctx context.Context, name string, lastBlock uint64, processedAt time.Time) error
 	UpsertWithdrawFlow(ctx context.Context, flow postgres.WithdrawFlow) error
@@ -46,8 +48,8 @@ type repository interface {
 // Service indexes umbrella events and reconciles queued rows.
 type Service struct {
 	cfg           Config
-	client        rpcClient
-	repo          repository
+	client        RPCClient
+	repo          Repository
 	contractABI   abi.ABI
 	assetDecimals uint8
 }

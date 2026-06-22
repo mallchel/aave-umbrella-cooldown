@@ -1,6 +1,6 @@
 .PHONY: help \
 	docker-dev docker-read-logs docker-dev-stop docker-reset-volumes docker-build docker-migrations \
-	build run-backend daemon-foreground daemon daemon-stop daemon-status sqlc-generate openapi-generate openapi-json openapi-check
+	build run-backend daemon-foreground daemon daemon-stop daemon-status sqlc-generate mock-generate openapi-generate openapi-json openapi-check
 
 help:
 	@echo "Available targets:"
@@ -12,6 +12,7 @@ help:
 	@echo "  make docker-migrations - run migrations container"
 	@echo "  make build         - build backend and daemon"
 	@echo "  make sqlc-generate - generate sqlc code"
+	@echo "  make mock-generate - generate test mocks with mockgen"
 	@echo "  make openapi-generate - generate Go HTTP server from docs/openapi/openapi.yaml"
 	@echo "  make openapi-json  - generate OpenAPI JSON from docs/openapi/openapi.yaml"
 	@echo "  make openapi-check - verify generated OpenAPI artifacts match docs/openapi/openapi.yaml"
@@ -44,6 +45,9 @@ build:
 
 sqlc-generate:
 	go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.29.0 generate -f internal/storage/postgres/queries/sqlc.yaml
+
+mock-generate:
+	sh ./scripts/mock-generate.sh
 
 openapi-generate:
 	go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.0 -package backend -generate types,chi-server -o internal/backend/openapi.gen.go docs/openapi/openapi.yaml

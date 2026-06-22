@@ -15,93 +15,63 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"go.uber.org/mock/gomock"
 )
 
-type mockRPCClient struct {
-	latestBlock    uint64
-	blockNumberErr error
-	logs           []types.Log
-	filterLogsErr  error
-	headers        map[uint64]*types.Header
-	headerErr      error
-	lastQuery      *ethereum.FilterQuery
+type runCycleCaptures struct {
+	mu        sync.Mutex
+	lastQuery *ethereum.FilterQuery
+	saves     []uint64
+	flows     []postgres.WithdrawFlow
 }
 
-func (m *mockRPCClient) BlockNumber(ctx context.Context) (uint64, error) {
-	if m.blockNumberErr != nil {
-		return 0, m.blockNumberErr
-	}
-	return m.latestBlock, nil
+func (c *runCycleCaptures) recordQuery(q ethereum.FilterQuery) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lastQuery = &q
 }
 
-func (m *mockRPCClient) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
-	m.lastQuery = &q
-	if m.filterLogsErr != nil {
-		return nil, m.filterLogsErr
-	}
-	return m.logs, nil
+func (c *runCycleCaptures) query() *ethereum.FilterQuery {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.lastQuery
 }
 
-func (m *mockRPCClient) HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error) {
-	if m.headerErr != nil {
-		return nil, m.headerErr
-	}
-	if m.headers == nil {
-		return &types.Header{Time: uint64(time.Now().UTC().Unix())}, nil
-	}
-	h := m.headers[number.Uint64()]
-	if h == nil {
-		return nil, errors.New("header not found")
-	}
-	return h, nil
+func (c *runCycleCaptures) recordSave(lastBlock uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.saves = append(c.saves, lastBlock)
 }
 
-func (m *mockRPCClient) Close() {}
-
-type mockRepository struct {
-	mu         sync.Mutex
-	state      postgres.IndexerState
-	getErr     error
-	saveCalls  []uint64
-	savedNames []string
-	flows      []postgres.WithdrawFlow
-	saveErr    error
-	upsertErr  error
+func (c *runCycleCaptures) saveCalls() []uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]uint64(nil), c.saves...)
 }
 
-func (m *mockRepository) GetIndexerState(ctx context.Context, name string) (postgres.IndexerState, error) {
-	if m.getErr != nil {
-		return postgres.IndexerState{}, m.getErr
-	}
-	return m.state, nil
+func (c *runCycleCaptures) recordFlow(flow postgres.WithdrawFlow) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.flows = append(c.flows, flow)
 }
 
-func (m *mockRepository) SaveIndexerState(ctx context.Context, name string, lastBlock uint64, processedAt time.Time) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.saveErr != nil {
-		return m.saveErr
-	}
-	m.saveCalls = append(m.saveCalls, lastBlock)
-	m.savedNames = append(m.savedNames, name)
-	m.state = postgres.IndexerState{Name: name, LastProcessedBlock: lastBlock, LastProcessedTime: processedAt}
-	m.getErr = nil
-	return nil
-}
-
-func (m *mockRepository) UpsertWithdrawFlow(ctx context.Context, flow postgres.WithdrawFlow) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.upsertErr != nil {
-		return m.upsertErr
-	}
-	m.flows = append(m.flows, flow)
-	return nil
+func (c *runCycleCaptures) withdrawFlows() []postgres.WithdrawFlow {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]postgres.WithdrawFlow(nil), c.flows...)
 }
 
 func TestRunCycle_FirstRunInitializesCheckpointAndProcessesStartBlockRange(t *testing.T) {
-	repo := &mockRepository{getErr: sql.ErrNoRows}
-	rpc := &mockRPCClient{latestBlock: startBlock}
+	ctrl := gomock.NewController(t)
+	repo := NewMockRepository(ctrl)
+	rpc := NewMockRPCClient(ctrl)
+	captures := &runCycleCaptures{}
+
+	repo.EXPECT().GetIndexerState(gomock.Any(), "umbrella-mainnet-indexer").Return(postgres.IndexerState{}, sql.ErrNoRows)
+	expectSaveIndexerState(repo, captures).Times(2)
+	rpc.EXPECT().BlockNumber(gomock.Any()).Return(startBlock, nil)
+	expectFilterLogs(rpc, captures, nil).Times(1)
+
 	svc := newTestService(t, rpc, repo)
 
 	processed, err := svc.RunCycle(context.Background())
@@ -112,26 +82,30 @@ func TestRunCycle_FirstRunInitializesCheckpointAndProcessesStartBlockRange(t *te
 	if processed {
 		t.Fatalf("expected processed=false on first initialization run")
 	}
-	if len(repo.saveCalls) != 2 {
-		t.Fatalf("expected two checkpoint saves (init + cycle), got %d", len(repo.saveCalls))
+	saveCalls := captures.saveCalls()
+	if len(saveCalls) != 2 {
+		t.Fatalf("expected two checkpoint saves (init + cycle), got %d", len(saveCalls))
 	}
-	if repo.saveCalls[0] != startBlock {
-		t.Fatalf("expected first checkpoint=%d, got %d", startBlock, repo.saveCalls[0])
+	if saveCalls[0] != startBlock {
+		t.Fatalf("expected first checkpoint=%d, got %d", startBlock, saveCalls[0])
 	}
-	if repo.saveCalls[1] != startBlock {
-		t.Fatalf("expected second checkpoint=%d, got %d", startBlock, repo.saveCalls[1])
+	if saveCalls[1] != startBlock {
+		t.Fatalf("expected second checkpoint=%d, got %d", startBlock, saveCalls[1])
 	}
-	if rpc.lastQuery == nil {
+	lastQuery := captures.query()
+	if lastQuery == nil {
 		t.Fatalf("expected log query for first-cycle start block")
 	}
-	if rpc.lastQuery.FromBlock.Uint64() != startBlock || rpc.lastQuery.ToBlock.Uint64() != startBlock {
-		t.Fatalf("expected first cycle range %d..%d, got %d..%d", startBlock, startBlock, rpc.lastQuery.FromBlock.Uint64(), rpc.lastQuery.ToBlock.Uint64())
+	if lastQuery.FromBlock.Uint64() != startBlock || lastQuery.ToBlock.Uint64() != startBlock {
+		t.Fatalf("expected first cycle range %d..%d, got %d..%d", startBlock, startBlock, lastQuery.FromBlock.Uint64(), lastQuery.ToBlock.Uint64())
 	}
 }
 
 func TestRunCycle_ProcessesLogsAndAdvancesCheckpoint(t *testing.T) {
-	repo := &mockRepository{state: postgres.IndexerState{LastProcessedBlock: startBlock}}
-	rpc := &mockRPCClient{latestBlock: startBlock + 5}
+	ctrl := gomock.NewController(t)
+	repo := NewMockRepository(ctrl)
+	rpc := NewMockRPCClient(ctrl)
+	captures := &runCycleCaptures{}
 
 	parsedABI, err := bindings.UmbrellaStakeTokenMetaData.GetAbi()
 	if err != nil {
@@ -148,7 +122,7 @@ func TestRunCycle_ProcessesLogsAndAdvancesCheckpoint(t *testing.T) {
 
 	user := common.HexToAddress("0x1111111111111111111111111111111111111111")
 	logBlock := startBlock + 1
-	rpc.logs = []types.Log{{
+	logs := []types.Log{{
 		Address:     common.HexToAddress("0xa484ab92fe32b143aee7019fc1502b1daa522d31"),
 		Topics:      []common.Hash{common.HexToHash("0xddc8760931d97309f92a4266c6046f83387e6407bcd727e7dd2130bfc430c419"), common.BytesToHash(user.Bytes())},
 		Data:        data,
@@ -156,7 +130,13 @@ func TestRunCycle_ProcessesLogsAndAdvancesCheckpoint(t *testing.T) {
 		TxHash:      common.HexToHash("0x2222222222222222222222222222222222222222222222222222222222222222"),
 		Index:       3,
 	}}
-	rpc.headers = map[uint64]*types.Header{logBlock: {Time: uint64(1700000100)}}
+
+	repo.EXPECT().GetIndexerState(gomock.Any(), "umbrella-mainnet-indexer").Return(postgres.IndexerState{LastProcessedBlock: startBlock}, nil)
+	expectSaveIndexerState(repo, captures).Times(1)
+	expectUpsertWithdrawFlow(repo, captures).Times(1)
+	rpc.EXPECT().BlockNumber(gomock.Any()).Return(startBlock+5, nil)
+	expectFilterLogs(rpc, captures, logs).Times(1)
+	expectHeaderByNumber(rpc, map[uint64]*types.Header{logBlock: {Time: uint64(1700000100)}}).Times(1)
 
 	svc := newTestService(t, rpc, repo)
 	processed, err := svc.RunCycle(context.Background())
@@ -166,32 +146,37 @@ func TestRunCycle_ProcessesLogsAndAdvancesCheckpoint(t *testing.T) {
 	if !processed {
 		t.Fatalf("expected processed=true when logs are present")
 	}
-	if rpc.lastQuery == nil {
+	lastQuery := captures.query()
+	if lastQuery == nil {
 		t.Fatalf("expected FilterLogs to be called")
 	}
-	if rpc.lastQuery.FromBlock.Uint64() != startBlock {
-		t.Fatalf("unexpected from block: %d", rpc.lastQuery.FromBlock.Uint64())
+	if lastQuery.FromBlock.Uint64() != startBlock {
+		t.Fatalf("unexpected from block: %d", lastQuery.FromBlock.Uint64())
 	}
-	if len(repo.flows) != 1 {
-		t.Fatalf("expected one upserted flow, got %d", len(repo.flows))
+	flows := captures.withdrawFlows()
+	if len(flows) != 1 {
+		t.Fatalf("expected one upserted flow, got %d", len(flows))
 	}
-	if got := repo.flows[0].SenderAddress; got != user.Hex() {
+	if got := flows[0].SenderAddress; got != user.Hex() {
 		t.Fatalf("unexpected sender address: %s", got)
 	}
-	if got := repo.flows[0].AmountRaw; got != amount.String() {
+	if got := flows[0].AmountRaw; got != amount.String() {
 		t.Fatalf("unexpected amount raw: %s", got)
 	}
-	if len(repo.saveCalls) == 0 {
+	saveCalls := captures.saveCalls()
+	if len(saveCalls) == 0 {
 		t.Fatalf("expected checkpoint to be saved")
 	}
-	if got := repo.saveCalls[len(repo.saveCalls)-1]; got != startBlock+5 {
+	if got := saveCalls[len(saveCalls)-1]; got != startBlock+5 {
 		t.Fatalf("expected checkpoint %d, got %d", startBlock+5, got)
 	}
 }
 
 func TestRunCycle_ProcessesLogsWithManyLogs(t *testing.T) {
-	repo := &mockRepository{getErr: sql.ErrNoRows}
-	rpc := &mockRPCClient{latestBlock: startBlock + 1000000}
+	ctrl := gomock.NewController(t)
+	repo := NewMockRepository(ctrl)
+	rpc := NewMockRPCClient(ctrl)
+	captures := &runCycleCaptures{}
 
 	parsedABI, err := bindings.UmbrellaStakeTokenMetaData.GetAbi()
 	if err != nil {
@@ -209,8 +194,13 @@ func TestRunCycle_ProcessesLogsWithManyLogs(t *testing.T) {
 	user := common.HexToAddress("0x1111111111111111111111111111111111111111")
 	firstLogBlock := startBlock + 1
 	lastLogBlock := startBlock + 1000000
+	batchRange := uint64(1000000)
+	batches := batchRange/(5*2000) + 1 // 101 loop iterations in RunCycle
+	filterCalls := (batches-1)*5 + 1   // 5 calls per full batch, 1 on the final partial batch
+	flowUpserts := filterCalls * 2     // two mocked logs returned per FilterLogs call
+	saveCallsExpected := batches + 1   // +1 initialization save on sql.ErrNoRows
 
-	rpc.logs = []types.Log{{
+	logs := []types.Log{{
 		Address:     common.HexToAddress("0xa484ab92fe32b143aee7019fc1502b1daa522d31"),
 		Topics:      []common.Hash{common.HexToHash("0xddc8760931d97309f92a4266c6046f83387e6407bcd727e7dd2130bfc430c419"), common.BytesToHash(user.Bytes())},
 		Data:        data,
@@ -225,10 +215,17 @@ func TestRunCycle_ProcessesLogsWithManyLogs(t *testing.T) {
 		TxHash:      common.HexToHash("0x3333333333333333333333333333333333333333333333333333333333333333"),
 		Index:       7,
 	}}
-	rpc.headers = map[uint64]*types.Header{
+	headers := map[uint64]*types.Header{
 		firstLogBlock: {Time: uint64(1700000100)},
 		lastLogBlock:  {Time: uint64(1701000000)},
 	}
+
+	repo.EXPECT().GetIndexerState(gomock.Any(), "umbrella-mainnet-indexer").Return(postgres.IndexerState{}, sql.ErrNoRows)
+	expectSaveIndexerState(repo, captures).Times(int(saveCallsExpected))
+	expectUpsertWithdrawFlow(repo, captures).Times(int(flowUpserts))
+	rpc.EXPECT().BlockNumber(gomock.Any()).Return(startBlock+1000000, nil)
+	expectFilterLogs(rpc, captures, logs).Times(int(filterCalls))
+	expectHeaderByNumber(rpc, headers).Times(int(flowUpserts))
 
 	svc := newTestService(t, rpc, repo)
 	processed, err := svc.RunCycle(context.Background())
@@ -239,33 +236,40 @@ func TestRunCycle_ProcessesLogsWithManyLogs(t *testing.T) {
 	if !processed {
 		t.Fatalf("expected processed=true when logs are present")
 	}
-	if rpc.lastQuery == nil {
+	lastQuery := captures.query()
+	if lastQuery == nil {
 		t.Fatalf("expected FilterLogs to be called")
 	}
-	if rpc.lastQuery.ToBlock.Uint64() != startBlock+1000000 {
-		t.Fatalf("unexpected to block: %d", rpc.lastQuery.ToBlock.Uint64())
+	if lastQuery.ToBlock.Uint64() != startBlock+1000000 {
+		t.Fatalf("unexpected to block: %d", lastQuery.ToBlock.Uint64())
 	}
+	flows := captures.withdrawFlows()
 	// +2 last block with two mocked logs
-	if len(repo.flows) != 500*2+2 {
-		t.Fatalf("expected %d upserted flows, got %d", 500*2+2, len(repo.flows))
+	if len(flows) != 500*2+2 {
+		t.Fatalf("expected %d upserted flows, got %d", 500*2+2, len(flows))
 	}
-	if got := repo.flows[0].SenderAddress; got != user.Hex() {
+	if got := flows[0].SenderAddress; got != user.Hex() {
 		t.Fatalf("unexpected sender address: %s", got)
 	}
-	if got := repo.flows[0].AmountRaw; got != amount.String() {
+	if got := flows[0].AmountRaw; got != amount.String() {
 		t.Fatalf("unexpected amount raw: %s", got)
 	}
-	if len(repo.saveCalls) == 0 {
-		t.Fatalf("expected checkpoint to be saved")
+	saveCalls := captures.saveCalls()
+	if len(saveCalls) != int(saveCallsExpected) {
+		t.Fatalf("expected %d checkpoint saves, got %d", saveCallsExpected, len(saveCalls))
 	}
-	if got := repo.saveCalls[len(repo.saveCalls)-1]; got != startBlock+1000000 {
+	if got := saveCalls[len(saveCalls)-1]; got != startBlock+1000000 {
 		t.Fatalf("expected checkpoint %d, got %d", startBlock+1000000, got)
 	}
 }
 
 func TestRunCycle_ReturnsErrorWhenGetCheckpointFails(t *testing.T) {
-	repo := &mockRepository{getErr: errors.New("db down")}
-	rpc := &mockRPCClient{latestBlock: startBlock + 10}
+	ctrl := gomock.NewController(t)
+	repo := NewMockRepository(ctrl)
+	rpc := NewMockRPCClient(ctrl)
+
+	repo.EXPECT().GetIndexerState(gomock.Any(), "umbrella-mainnet-indexer").Return(postgres.IndexerState{}, errors.New("db down"))
+
 	svc := newTestService(t, rpc, repo)
 
 	processed, err := svc.RunCycle(context.Background())
@@ -277,7 +281,50 @@ func TestRunCycle_ReturnsErrorWhenGetCheckpointFails(t *testing.T) {
 	}
 }
 
-func newTestService(t *testing.T, rpc rpcClient, repo repository) *Service {
+func expectFilterLogs(rpc *MockRPCClient, captures *runCycleCaptures, logs []types.Log) *gomock.Call {
+	return rpc.EXPECT().FilterLogs(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
+			captures.recordQuery(q)
+			return logs, nil
+		},
+	)
+}
+
+func expectHeaderByNumber(rpc *MockRPCClient, headers map[uint64]*types.Header) *gomock.Call {
+	return rpc.EXPECT().HeaderByNumber(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, number *big.Int) (*types.Header, error) {
+			if headers == nil {
+				return &types.Header{Time: uint64(time.Now().UTC().Unix())}, nil
+			}
+
+			header := headers[number.Uint64()]
+			if header == nil {
+				return nil, errors.New("header not found")
+			}
+			return header, nil
+		},
+	)
+}
+
+func expectSaveIndexerState(repo *MockRepository, captures *runCycleCaptures) *gomock.Call {
+	return repo.EXPECT().SaveIndexerState(gomock.Any(), "umbrella-mainnet-indexer", gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ string, lastBlock uint64, _ time.Time) error {
+			captures.recordSave(lastBlock)
+			return nil
+		},
+	)
+}
+
+func expectUpsertWithdrawFlow(repo *MockRepository, captures *runCycleCaptures) *gomock.Call {
+	return repo.EXPECT().UpsertWithdrawFlow(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, flow postgres.WithdrawFlow) error {
+			captures.recordFlow(flow)
+			return nil
+		},
+	)
+}
+
+func newTestService(t *testing.T, rpc RPCClient, repo Repository) *Service {
 	t.Helper()
 	parsedABI, err := bindings.UmbrellaStakeTokenMetaData.GetAbi()
 	if err != nil {
