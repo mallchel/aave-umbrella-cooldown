@@ -38,9 +38,10 @@ make docker-dev
 This starts:
 
 - `postgres` with persistent volume
-- `migrate` one-shot migration container
 - `backend` with Air hot reload
 - `daemon` with Air hot reload
+
+Migrations are executed by `daemon` on startup before indexer logic begins.
 
 ### Edit code and see changes
 
@@ -107,7 +108,7 @@ make docker-reset-volumes
 This repository includes:
 
 - `build/docker/Dockerfile` with multi-stage builds for backend and daemon
-- `docker-compose.yml` with services: `postgres`, `migrate`, `backend`, `daemon`
+- `docker-compose.yml` with services: `postgres`, `backend`, `daemon`
 
 ### Start everything
 
@@ -117,22 +118,14 @@ From repository root:
 make docker-build
 ```
 
-### Run migrations only
-
-```bash
-make docker-migrations
-```
+Migrations run automatically when `daemon` starts (for both `make docker-dev` and `make docker-build`).
 
 Migration files follow golang-migrate naming:
 
 - `migrations/000001_name.up.sql`
 - `migrations/000001_name.down.sql`
 
-Add a new migration by creating the next versioned pair (for example `000002_add_index.up.sql` and `000002_add_index.down.sql`), then run:
-
-```bash
-make docker-migrations
-```
+Add a new migration by creating the next versioned pair (for example `000002_add_index.up.sql` and `000002_add_index.down.sql`), then restart daemon via `make docker-dev` or `make docker-build`.
 
 ### Watch logs
 

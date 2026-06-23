@@ -26,6 +26,7 @@ Repository guidance for coding agents working in this project.
 - Keep reusable command wrappers in `scripts/` and call them from `Makefile` targets.
 - Treat `tmp/` as generated/runtime output only (pid files, logs, local build artifacts).
 - Keep business logic in `internal/*`, not in `cmd/*`.
+- Keep shared runtime environment configuration in `internal/appconfig`; do not duplicate `loadConfig` implementations across `cmd/*` entrypoints.
 - When architecture or structure changes, add or update an ADR in `docs/adr/`.
 
 ## Common Commands
@@ -40,8 +41,6 @@ Repository guidance for coding agents working in this project.
   - `make docker-reset-volumes`
 - Build and start Docker services:
   - `make docker-build`
-- Run migrations in Docker:
-  - `make docker-migrations`
 
 ## Validation Checklist
 

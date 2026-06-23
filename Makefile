@@ -1,5 +1,5 @@
 .PHONY: help \
-	docker-dev docker-read-logs docker-dev-stop docker-reset-volumes docker-build docker-migrations \
+	docker-dev docker-read-logs docker-dev-stop docker-reset-volumes docker-build \
 	build run-backend daemon-foreground daemon daemon-stop daemon-status sqlc-generate mock-generate openapi-generate openapi-json openapi-check
 
 help:
@@ -9,7 +9,6 @@ help:
 	@echo "  make docker-dev-stop  - stop docker dev services"
 	@echo "  make docker-reset-volumes - stop services and remove volumes"
 	@echo "  make docker-build     - build and start docker services"
-	@echo "  make docker-migrations - run migrations container"
 	@echo "  make build         - build backend and daemon"
 	@echo "  make sqlc-generate - generate sqlc code"
 	@echo "  make mock-generate - generate test mocks with mockgen"
@@ -36,9 +35,6 @@ docker-reset-volumes:
 
 docker-build:
 	docker compose up --build -d
-
-docker-migrations:
-	docker compose run --rm migrate
 
 build:
 	sh ./scripts/build.sh

@@ -19,6 +19,7 @@ RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 
 COPY --from=builder /src/configs ./configs
+COPY --from=builder /src/migrations ./migrations
 
 FROM base-runtime AS backend-runtime
 

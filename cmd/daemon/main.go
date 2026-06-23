@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"1-task/internal/envutil"
+	"1-task/internal/appconfig"
 	"1-task/internal/indexer"
 	"1-task/internal/storage/postgres"
 
@@ -17,15 +17,17 @@ import (
 )
 
 func main() {
+	cfg := appconfig.LoadServiceConfig()
+
 	if os.Getenv("DAEMON_FOREGROUND") == "1" {
-		runLoop()
+		runLoop(cfg)
 		return
 	}
 
 	cntxt := &daemon.Context{
-		PidFileName: envutil.Get("DAEMON_PID_FILE", "./tmp/umbrella-daemon.pid"),
+		PidFileName: cfg.DaemonPidFileName,
 		PidFilePerm: 0o644,
-		LogFileName: envutil.Get("DAEMON_LOG_FILE", "./tmp/umbrella-daemon.log"),
+		LogFileName: cfg.DaemonLogFileName,
 		LogFilePerm: 0o640,
 		WorkDir:     "./",
 		Umask:       0o027,
@@ -41,13 +43,17 @@ func main() {
 	}
 	defer cntxt.Release()
 
-	runLoop()
+	runLoop(cfg)
 }
 
-func runLoop() {
+func runLoop(cfg appconfig.ServiceConfig) {
 	ctx := context.Background()
 
-	repo, svc, err := initIndexer(ctx)
+	if err := postgres.RunMigrations(ctx, cfg.PostgresDSN, cfg.MigrationsPath); err != nil {
+		log.Fatalf("run migrations: %v", err)
+	}
+
+	repo, svc, err := initIndexer(ctx, cfg)
 	if err != nil {
 		log.Fatalf("init indexer: %v", err)
 	}
@@ -106,24 +112,21 @@ func runIndexCycle(svc *indexer.Service, isFirstRun bool) {
 	log.Print("indexer cycle completed: no new finalized logs")
 }
 
-func initIndexer(ctx context.Context) (*postgres.Repository, *indexer.Service, error) {
-	rpcURL := envutil.Get("RPC_URL", "https://ethereum-rpc.publicnode.com")
-	dsn := envutil.Get("POSTGRES_DSN", "postgresql://umbrella_user:umbrella_pass@localhost:5432/umbrella_db?sslmode=disable")
-	configPath := envutil.Get("UMBRELLA_CONFIG_PATH", "./configs/umbrella/mainnet.json")
+func initIndexer(ctx context.Context, cfg appconfig.ServiceConfig) (*postgres.Repository, *indexer.Service, error) {
 	batchRange := uint64(2000)
 	finalityDepth := uint64(12)
 
-	cfg, err := indexer.LoadConfig(configPath, rpcURL, batchRange, finalityDepth)
+	indexerCfg, err := indexer.LoadConfig(cfg.UmbrellaConfigPath, cfg.RPCURL, batchRange, finalityDepth)
 	if err != nil {
 		return nil, nil, fmt.Errorf("load indexer config: %w", err)
 	}
 
-	repo, err := postgres.New(ctx, dsn)
+	repo, err := postgres.New(ctx, cfg.PostgresDSN)
 	if err != nil {
 		return nil, nil, fmt.Errorf("init postgres repository: %w", err)
 	}
 
-	svc, err := indexer.NewService(ctx, cfg, repo)
+	svc, err := indexer.NewService(ctx, indexerCfg, repo)
 	if err != nil {
 		_ = repo.Close()
 		return nil, nil, fmt.Errorf("init indexer service: %w", err)
