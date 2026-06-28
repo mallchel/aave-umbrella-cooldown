@@ -30,7 +30,7 @@ services:
       DAEMON_FOREGROUND: "1"
       UMBRELLA_CONFIG_PATH: "./configs/umbrella/mainnet.json"
       POSTGRES_DSN: "postgresql://umbrella_user:umbrella_pass@postgres:5432/umbrella_db?sslmode=disable"
-      RPC_URL: "https://ethereum-rpc.publicnode.com"
+      RPC_URL: "${RPC_URL:?set RPC_URL in .env or shell environment}"
       CGO_ENABLED: "0"
     command: >
       sh -c "apk add --no-cache git && go install github.com/air-verse/air@latest && air -c .air.daemon.toml"

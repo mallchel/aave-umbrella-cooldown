@@ -1,2 +1,5 @@
 .vscode
 tmp
+.env
+.env.*
+!.env.example

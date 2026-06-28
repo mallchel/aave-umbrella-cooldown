@@ -44,7 +44,7 @@ services:
       DAEMON_FOREGROUND: "1"
       UMBRELLA_CONFIG_PATH: "/app/configs/umbrella/mainnet.json"
       POSTGRES_DSN: "postgresql://umbrella_user:umbrella_pass@postgres:5432/umbrella_db?sslmode=disable"
-      RPC_URL: "https://ethereum-rpc.publicnode.com"
+      RPC_URL: "${RPC_URL:?set RPC_URL in .env or shell environment}"
 
   grafana:
     image: grafana/grafana:11.4.0

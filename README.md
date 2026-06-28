@@ -13,6 +13,24 @@ The daemon indexes cooldown transactions and stores them in PostgreSQL.
 - Docker
 - Docker Compose
 
+## Environment Secrets
+
+Keep tokenized endpoints (for example `RPC_URL`) in a local `.env` file at the repository root, not in compose YAML.
+
+Initialize local env from the template:
+
+```bash
+cp .env.example .env
+```
+
+Then set your private RPC value in `.env`:
+
+```bash
+RPC_URL="https://your-provider.example/<token>"
+```
+
+Both `docker-compose.yml` and `docker-compose.dev.yml` read `RPC_URL` from environment variable substitution.
+
 ## Project Structure
 
 - cmd/backend - HTTP backend entrypoint
