@@ -19,6 +19,7 @@ func (r *Repository) UpsertWithdrawFlow(ctx context.Context, flow WithdrawFlow) 
 		EventType:        flow.EventType,
 		AmountRaw:        flow.AmountRaw,
 		AmountNormalized: flow.AmountNormalized,
+		CooldownEndAt:    flow.CooldownEndAt,
 	})
 	if err != nil {
 		return fmt.Errorf("upsert raw_withdraw_flows: %w", err)

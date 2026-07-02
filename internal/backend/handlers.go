@@ -63,6 +63,7 @@ func (s *Server) ListDailySeriesData(w http.ResponseWriter, r *http.Request) {
 			Requested:    point.Requested,
 			Withdrawn:    point.Withdrawn,
 			RequestCount: point.RequestCount,
+			ActiveCooldown: point.ActiveCooldown,
 		})
 	}
 

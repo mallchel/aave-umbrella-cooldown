@@ -32,10 +32,11 @@ type ApiError struct {
 
 // DailySeriesDataPoint defines model for DailySeriesDataPoint.
 type DailySeriesDataPoint struct {
-	Day          openapi_types.Date `json:"day"`
-	RequestCount float64            `json:"request_count"`
-	Requested    float64            `json:"requested"`
-	Withdrawn    float64            `json:"withdrawn"`
+	ActiveCooldown float64            `json:"active_cooldown"`
+	Day            openapi_types.Date `json:"day"`
+	RequestCount   float64            `json:"request_count"`
+	Requested      float64            `json:"requested"`
+	Withdrawn      float64            `json:"withdrawn"`
 }
 
 // HealthResponse defines model for HealthResponse.

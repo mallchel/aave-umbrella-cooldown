@@ -20,7 +20,8 @@ INSERT INTO raw_withdraw_flows (
   sender_address,
   event_type,
   amount_raw,
-  amount_normalized
+  amount_normalized,
+  cooldown_end_at
 ) VALUES (
   $1,
   $2,
@@ -30,7 +31,8 @@ INSERT INTO raw_withdraw_flows (
   $6,
   $7,
   $8,
-  $9
+  $9,
+  $10
 )
 ON CONFLICT (chain_id, tx_hash, log_index) DO UPDATE
 SET
@@ -40,6 +42,7 @@ SET
   event_type = EXCLUDED.event_type,
   amount_raw = EXCLUDED.amount_raw,
   amount_normalized = EXCLUDED.amount_normalized,
+  cooldown_end_at = EXCLUDED.cooldown_end_at,
   updated_at = NOW()
 `
 
@@ -53,6 +56,7 @@ type UpsertWithdrawFlowParams struct {
 	EventType        string
 	AmountRaw        string
 	AmountNormalized string
+	CooldownEndAt    int64
 }
 
 func (q *Queries) UpsertWithdrawFlow(ctx context.Context, arg UpsertWithdrawFlowParams) error {
@@ -66,6 +70,7 @@ func (q *Queries) UpsertWithdrawFlow(ctx context.Context, arg UpsertWithdrawFlow
 		arg.EventType,
 		arg.AmountRaw,
 		arg.AmountNormalized,
+		arg.CooldownEndAt,
 	)
 	return err
 }

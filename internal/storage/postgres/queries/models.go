@@ -28,4 +28,5 @@ type RawWithdrawFlow struct {
 	AmountNormalized string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	CooldownEndAt    int64
 }

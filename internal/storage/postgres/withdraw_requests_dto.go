@@ -19,6 +19,7 @@ type WithdrawFlow struct {
 	AmountRaw        string
 	AmountNormalized string
 	UpdatedAt        time.Time
+	CooldownEndAt    int64
 }
 
 // TableName maps this DTO to the schema table.

@@ -118,7 +118,8 @@ func exponentialBackoff[T any](getter func() (T, error), currentBlock, toBlock u
 }
 
 // https://etherscan.io/tx/0xfa2d65feee27b96d70d5d2808c3b89f9d2b7240ed4ff37f679b88d55dba5c658
-var startBlock = uint64(16832680)
+// find in logs the min block number
+var startBlock = uint64(22638748)
 
 // RunCycle processes one block range and returns true when something was indexed.
 func (s *Service) RunCycle(ctx context.Context) (bool, error) {
@@ -284,6 +285,7 @@ func (s *Service) handleCooldownLog(ctx context.Context, lg types.Log, blockTime
 		EventType:        postgres.FlowEventTypeRequest,
 		AmountRaw:        ev.Amount.String(),
 		AmountNormalized: normalizeAmount(ev.Amount, s.assetDecimals),
+		CooldownEndAt:    ev.EndOfCooldown.Int64(),
 	}
 
 	if err := s.repo.UpsertWithdrawFlow(ctx, flow); err != nil {

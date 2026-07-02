@@ -185,7 +185,7 @@ components:
 
     DailySeriesDataPoint:
       type: object
-      required: [day, requested, withdrawn, request_count]
+      required: [day, requested, withdrawn, request_count, active_cooldown]
       properties:
         day:
           type: string
@@ -198,5 +198,8 @@ components:
           type: number
           format: double
         request_count:
+          type: number
+          format: double
+        active_cooldown:
           type: number
           format: double
