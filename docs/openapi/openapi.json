@@ -284,7 +284,8 @@
           "day",
           "requested",
           "withdrawn",
-          "request_count"
+          "request_count",
+          "active_cooldown"
         ],
         "properties": {
           "day": {
@@ -301,6 +302,10 @@
             "format": "double"
           },
           "request_count": {
+            "type": "number",
+            "format": "double"
+          },
+          "active_cooldown": {
             "type": "number",
             "format": "double"
           }
